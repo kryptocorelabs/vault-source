@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "KryptoCore Vault Preview",
+  "description": "Find, fill and save sign-ins using the local KryptoCore Vault desktop app for Windows.",
+  "version": "0.1.15",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; upgrade-insecure-requests;"
+  },
+  "permissions": ["activeTab", "scripting", "nativeMessaging", "storage", "alarms"],
+  "optional_host_permissions": ["https://*/*"],
+  "background": { "scripts": ["firefox-client.js", "firefox-background.js"] },
+  "icons": { "48": "vault-icon.svg", "96": "vault-icon.svg" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "KryptoCore Vault",
+    "default_icon": { "16": "vault-icon.svg", "32": "vault-icon.svg" }
+  },
+  "commands": {
+    "_execute_action": { "suggested_key": { "default": "Alt+Shift+K" } }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "vault@kryptocorelabs",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["authenticationInfo", "browsingActivity"]
+      }
+    }
+  }
+}

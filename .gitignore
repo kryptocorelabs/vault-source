@@ -1,0 +1,16 @@
+/_old/
+__pycache__/
+.pytest_cache/
+.venv/
+*.egg-info/
+/build/
+/dist/
+/publishing/
+/releases/*
+!/releases/README.md
+/target/
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+*.kcv
+*.kcv.lock

@@ -1,0 +1,88 @@
+name: Vault CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  vault-tests:
+    name: Vault container and channel (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.99.1 --profile minimal
+      - run: cargo +1.99.1 test --locked --release -p kryptocore-vault -p vault-firefox-channel -- --test-threads=1
+
+  browser-sessions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: node --test apps/vault/tests/firefox-security.test.cjs
+
+  dependencies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.99.1 --profile minimal
+      - run: cargo +1.99.1 install --locked cargo-audit --version 0.22.2
+      - run: cargo +1.99.1 audit --deny warnings
+      - name: Verify and install cargo-deny
+        env:
+          CARGO_DENY_SHA256: f1f8eedc2a3ac297c540873f93785d4104b102c0079506b2a6b3221b7ec956af
+        run: |
+          archive="$RUNNER_TEMP/cargo-deny.tar.gz"
+          directory="$RUNNER_TEMP/cargo-deny"
+          curl --fail --location --silent --show-error --retry 2 \
+            https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.9/cargo-deny-0.19.9-x86_64-unknown-linux-musl.tar.gz \
+            --output "$archive"
+          printf '%s  %s\n' "$CARGO_DENY_SHA256" "$archive" | sha256sum --check
+          mkdir "$directory"
+          tar -xzf "$archive" -C "$directory" --strip-components=1
+          echo "$directory" >> "$GITHUB_PATH"
+      - run: cargo +1.99.1 deny --locked check --config deny.toml licenses
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: python -m pip install pip-audit==2.10.1
+      - run: python -m pip_audit --disable-pip --no-deps -r apps/vault/desktop/requirements.txt
+
+  build-consistency:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    needs: [vault-tests, browser-sessions, dependencies]
+    env:
+      RUSTUP_TOOLCHAIN: '1.99.1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.99.1 --profile minimal --target wasm32-unknown-unknown
+      - shell: pwsh
+        run: ./apps/vault/tests/verify-build.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP vault-build-check)
+      - uses: actions/upload-artifact@v6
+        with:
+          name: vault-build-checksums
+          path: ${{ runner.temp }}/vault-build-check/SHA256SUMS.txt
+          if-no-files-found: error

@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "KryptoCore Vault Preview",
+  "version": "0.1.1",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "action": { "default_popup": "popup.html" }
+}
