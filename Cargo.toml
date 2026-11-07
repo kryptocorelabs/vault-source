@@ -10,7 +10,7 @@ publish = false
 path = "rust/lib.rs"
 
 [workspace]
-members = ["apps/vault", "apps/vault/firefox-channel"]
+members = ["apps/vault", "apps/vault/firefox-channel", "modules/vault-format"]
 resolver = "2"
 
 [dependencies]

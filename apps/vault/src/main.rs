@@ -12,25 +12,9 @@ use std::{
     process::ExitCode,
 };
 
-use serde::{Deserialize, Serialize};
+use kryptocore_vault_format::Login;
 use url::Url;
-use zeroize::{Zeroize, Zeroizing};
-
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Login {
-    origin: String,
-    username: String,
-    password: String,
-}
-
-impl Drop for Login {
-    fn drop(&mut self) {
-        self.origin.zeroize();
-        self.username.zeroize();
-        self.password.zeroize();
-    }
-}
+use zeroize::Zeroizing;
 
 fn origin(input: &str) -> Result<String, &'static str> {
     let input = input.trim();

@@ -375,6 +375,7 @@ version = "0.1.0-rc.2"
 dependencies = [
  "getrandom",
  "kryptocore",
+ "kryptocore-vault-format",
  "rpassword",
  "serde",
  "serde_json",
@@ -382,6 +383,18 @@ dependencies = [
  "tempfile",
  "tiny_http",
  "url",
+ "zeroize",
+]
+
+[[package]]
+name = "kryptocore-vault-format"
+version = "0.1.0-rc.2"
+dependencies = [
+ "getrandom",
+ "kryptocore",
+ "serde",
+ "serde_json",
+ "tempfile",
  "zeroize",
 ]
 

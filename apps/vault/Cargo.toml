@@ -9,6 +9,7 @@ default-run = "kryptocore-vault"
 
 [dependencies]
 kryptocore = { path = "../.." }
+kryptocore-vault-format = { path = "../../modules/vault-format" }
 getrandom = "0.3"
 rpassword = "7"
 serde = { version = "1", features = ["derive"] }

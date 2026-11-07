@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-latest, macos-15-intel]
+        os: [ubuntu-24.04, windows-latest, macos-15]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -24,7 +24,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install 1.99.1 --profile minimal
-      - run: cargo +1.99.1 test --locked --release -p kryptocore-vault -p vault-firefox-channel -- --test-threads=1
+      - run: cargo +1.99.1 test --locked --release -p kryptocore-vault -p kryptocore-vault-format -p vault-firefox-channel -- --test-threads=1
 
   browser-sessions:
     runs-on: ubuntu-24.04
