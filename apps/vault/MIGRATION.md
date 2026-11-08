@@ -71,9 +71,10 @@ That fingerprint does not authenticate who created an untrusted plaintext export
 
 Plaintext export needs an unlocked, authenticated session and explicit confirmation.
 Stale KCV3 revisions are rejected before export. The Rust worker writes the JSON
-directly to a private temporary file in the selected directory and publishes it
-without clobbering. Linked/reparse output ancestors are rejected; the destination
-directory must still be trusted. The GUI receives counts, not the exported secrets.
+directly to a temporary file in the selected directory and publishes it without
+clobbering. Unix files use mode 0600; Windows files inherit the directory's ACL.
+Linked/reparse output ancestors are rejected; the destination directory must
+still be trusted and access-restricted. The GUI receives counts, not exported secrets.
 Managed memory and serialization can still leave copies; this is not protection
 against a compromised process or OS. Exports are not sent to a service.
 
