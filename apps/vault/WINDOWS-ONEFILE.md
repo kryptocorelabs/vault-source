@@ -21,6 +21,10 @@ the repository root with the path to that environment's Python executable.
 The EXE and checksum are written to `dist/vault-onefile`. Run the EXE
 with `--verify-bundle` to check the bundled Qt assets, password estimator,
 Firefox host files, and creation and reopening of a synthetic vault.
+The verification path does not open the normal Vault session or change the
+current Firefox native-host registration. Packaging also runs the shared
+executable-only check with isolated runtime paths and records its results
+under the output directory's `verification` folder.
 
 Use `-OutputDirectory` and `-WorkDirectory` for an isolated design build so
 an existing versioned package is preserved.

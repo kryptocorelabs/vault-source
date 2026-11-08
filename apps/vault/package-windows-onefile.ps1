@@ -44,6 +44,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Bundling the one-file Vault failed.' }
 
     $file = Join-Path $output 'KryptoCore-Vault-Portable.exe'
+    & (Join-Path $repo 'apps/desktop/tests/check-portable.ps1') -Product Vault -Executable $file `
+        -OutputDirectory (Join-Path $output 'verification')
     $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  KryptoCore-Vault-Portable.exe" | Set-Content (Join-Path $output 'SHA256SUMS.txt') -Encoding ascii
     Get-Item -LiteralPath $file

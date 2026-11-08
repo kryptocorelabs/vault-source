@@ -1580,7 +1580,6 @@ def main():
     app = W.QApplication(sys.argv)
     app.setStyle('Fusion')
     app.setStyleSheet(STYLE)
-    window = Vault()
     if ROOT is None and sys.argv[1:] == ['--verify-bundle']:
         from tempfile import TemporaryDirectory
 
@@ -1611,6 +1610,7 @@ def main():
                 if json.loads(result.stdout).get('entries') != []:
                     raise VaultError('Bundled backend could not open a test vault.')
         return 0
+    window = Vault()
     window.show()
     C.QTimer.singleShot(0, window.open_recent_at_startup)
     window.open_button.setFocus()
