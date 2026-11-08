@@ -3,6 +3,12 @@
 Vault 0.1.0-rc.2 and Firefox 0.1.14 or later use the encrypted v5 channel.
 See the [usage notes](USAGE.md) for recovery instructions.
 
+Testing to date has been carried out by the KryptoCoreLabs maintainers, locally
+and through automated CI. No independent security audit has been completed.
+We welcome community testing, code reviews and scrutiny of our security
+assumptions. Please use synthetic data and report suspected vulnerabilities
+privately through the project's security-reporting channel.
+
 ## Firefox channel
 
 The Windows app and add-on use the same pinned Snow implementation of

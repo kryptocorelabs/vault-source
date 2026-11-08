@@ -10,6 +10,12 @@ Read the [usage notes](USAGE.md), [security boundaries](SECURITY.md) and
 [third-party notices](../../THIRD_PARTY_NOTICES.md). Statutory rights and
 applicable legal responsibilities are not displaced by these notices.
 
+Testing to date has been carried out by the KryptoCoreLabs maintainers, locally
+and through automated CI. No independent security audit has been completed.
+We welcome community testing, code reviews and scrutiny of our security
+assumptions. Please use synthetic data and report suspected vulnerabilities
+privately through the project's security-reporting channel.
+
 ## End-user builds and development
 
 The [single-file Windows build](WINDOWS-ONEFILE.md) bundles Python, Qt and the

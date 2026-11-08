@@ -15,6 +15,12 @@ its MIT-licensed implementation and the shared Vault format reader so contributo
 can build and test the complete application. MSG, Container and Rescue are in
 [apps-source](https://github.com/kryptocorelabs/apps-source).
 
+Testing to date has been carried out by the KryptoCoreLabs maintainers, locally
+and through automated CI. No independent security audit has been completed.
+We welcome community testing, code reviews and scrutiny of our security
+assumptions. Please use synthetic data and report suspected vulnerabilities
+privately through the project's security-reporting channel.
+
 ## Build and test
 
 ```sh
