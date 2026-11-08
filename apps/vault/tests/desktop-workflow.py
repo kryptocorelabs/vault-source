@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     os.environ['LOCALAPPDATA'] = str(folder)
     os.environ['QT_QPA_PLATFORM'] = 'offscreen'
     app = ui.W.QApplication([])
-    app.setStyleSheet(ui.STYLE)
+    app.setStyleSheet(ui.desktop_style())
     app.setQuitOnLastWindowClosed(False)
     for filename in ('segoeui.ttf', 'consola.ttf'):
         font = Path('C:/Windows/Fonts') / filename

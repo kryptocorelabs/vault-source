@@ -118,6 +118,15 @@ QLabel#brandCaption { color: #99aebb; font-size: 10px; }
 '''
 
 
+def desktop_style():
+    if os.name == 'nt':
+        return STYLE
+    def family(role):
+        return G.QFontDatabase.systemFont(role).family().replace('"', '')
+    return STYLE.replace('"Segoe UI"', '"' + family(G.QFontDatabase.SystemFont.GeneralFont) + '"').replace(
+        '"Consolas"', '"' + family(G.QFontDatabase.SystemFont.FixedFont) + '"')
+
+
 class VaultError(Exception):
     pass
 
@@ -1617,7 +1626,7 @@ class Vault(W.QWidget):
 def main():
     app = W.QApplication(sys.argv)
     app.setStyle('Fusion')
-    app.setStyleSheet(STYLE)
+    app.setStyleSheet(desktop_style())
     if ROOT is None and sys.argv[1:] == ['--verify-bundle']:
         from tempfile import TemporaryDirectory
 
