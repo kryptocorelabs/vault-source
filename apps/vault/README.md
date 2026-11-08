@@ -1,6 +1,6 @@
 # KryptoCore Vault 0.1.0-rc.2
 
-Local password manager with a Windows desktop interface, Rust CLI and Firefox
+Local password manager with a cross-platform Qt desktop interface, Rust CLI and Firefox
 companion. Vault and its extension are open source under the workspace's MIT
 license. Dependencies retain their own terms. This remains a development preview;
 use synthetic data and retain backups. Independent security audit is pending.
@@ -19,6 +19,10 @@ privately through the project's security-reporting channel.
 The unreleased [recovery hardening](RECOVERY-HARDENING.md) rotates the payload
 seed on password reset. Existing published binaries may retain the old behavior.
 See [Vault's threat model](THREAT_MODEL.md) for snapshot, rollback and memory limits.
+
+See [desktop platforms](PLATFORMS.md) for native Linux and macOS build/test
+instructions and limitations. Firefox pairing remains Windows-only; no alternate
+plaintext transport or key store is used on other platforms.
 
 ## End-user builds and development
 

@@ -3,7 +3,7 @@
 [![Vault CI](https://github.com/kryptocorelabs/vault-source/actions/workflows/vault-ci.yml/badge.svg)](https://github.com/kryptocorelabs/vault-source/actions/workflows/vault-ci.yml)
 [MIT](LICENSE) · [Contribute](CONTRIBUTING.md) · [Security](SECURITY.md) · [Project charter](https://github.com/kryptocorelabs/kryptocore/blob/main/PROJECT_CHARTER.md)
 
-Open-source Windows Vault application, Firefox extension and their shared native
+Open-source Qt Vault application, Firefox extension and their shared native
 channel. First-party code is MIT licensed. Dependencies, including Qt, retain
 their own licenses and distribution requirements. See
 [third-party notices](THIRD_PARTY_NOTICES.md).
@@ -24,6 +24,10 @@ privately through the project's security-reporting channel.
 See the [unreleased recovery hardening](apps/vault/RECOVERY-HARDENING.md) and
 [Vault threat model](apps/vault/THREAT_MODEL.md) for seed rotation, old-file access,
 rollback and Python/Qt memory limits. Existing published binaries are unchanged.
+
+The local desktop has [native Linux/macOS build paths](apps/vault/PLATFORMS.md),
+with Intel and Apple Silicon CI packages. Firefox pairing is Windows-only.
+CI packages are unsigned evaluation artifacts, not replacements for current releases.
 
 ## Build and test
 

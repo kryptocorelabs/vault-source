@@ -230,8 +230,8 @@ class StartTile(W.QPushButton):
         self.setSizePolicy(W.QSizePolicy.Expanding, W.QSizePolicy.Fixed)
         self.setMinimumHeight(86 if primary else 121)
         self.clicked.connect(action)
-        icon = label(symbol, 'tileIconPrimary' if primary else 'tileIcon')
-        if symbol == '\ue777':
+        icon = label('↻' if os.name != 'nt' and symbol == '\ue777' else symbol, 'tileIconPrimary' if primary else 'tileIcon')
+        if os.name == 'nt' and symbol == '\ue777':
             icon.setFont(G.QFont('Segoe MDL2 Assets'))
         icon.setAlignment(C.Qt.AlignCenter)
         icon.setFixedSize(34, 34)
@@ -329,8 +329,9 @@ class TitleBar(W.QFrame):
         layout.addStretch()
         if controls:
             layout.addWidget(window.firefox_indicator)
-            settings = button('\ue713', window.settings, 'chrome')
-            settings.setFont(G.QFont('Segoe MDL2 Assets'))
+            settings = button('\ue713' if os.name == 'nt' else '⚙', window.settings, 'chrome')
+            if os.name == 'nt':
+                settings.setFont(G.QFont('Segoe MDL2 Assets'))
             settings.setFixedSize(30, 28)
             settings.setAccessibleName('Einstellungen')
             settings.setToolTip('Einstellungen')
@@ -443,6 +444,9 @@ class Vault(W.QWidget):
         self.entries = []
         local_data = os.environ.get('LOCALAPPDATA') or C.QStandardPaths.writableLocation(C.QStandardPaths.GenericDataLocation)
         self.settings_folder = Path(local_data) / 'KryptoCoreLabs' / 'Vault'
+        self.settings_folder.mkdir(parents=True, exist_ok=True)
+        if os.name != 'nt':
+            self.settings_folder.chmod(0o700)
         self.preferences = C.QSettings(str(self.settings_folder / 'preferences.ini'), C.QSettings.IniFormat)
         self.glass_supported = sys.platform == 'win32' and C.QCoreApplication.instance().platformName() == 'windows'
         self.setAttribute(C.Qt.WA_TranslucentBackground, self.glass_supported)
@@ -453,6 +457,7 @@ class Vault(W.QWidget):
         self.active_vault_path = ''
         self.last_vault_path = self.preferences.value('vault/recent', '', str) if self.vault_mode == 'standard' else ''
         self.deadline = 0
+        self.last_wall_check = time.time()
         self.firefox_server = N.QLocalServer(self)
         self.firefox_server.setSocketOptions(N.QLocalServer.UserAccessOption)
         self.firefox_server.setMaxPendingConnections(4)
@@ -489,6 +494,9 @@ class Vault(W.QWidget):
         self.update_open_button()
         lock_shortcut = G.QShortcut(G.QKeySequence('Ctrl+L'), self)
         lock_shortcut.activated.connect(self.lock)
+        if sys.platform == 'darwin':
+            G.QShortcut(G.QKeySequence('Meta+L'), self).activated.connect(self.lock)
+        W.QApplication.instance().applicationStateChanged.connect(self.application_state_changed)
         W.QApplication.instance().installEventFilter(self)
         self.timer = C.QTimer(self, interval=1000)
         self.timer.timeout.connect(self.check_idle)
@@ -500,12 +508,18 @@ class Vault(W.QWidget):
                 self.session_window = window
 
     def nativeEvent(self, event_type, message):
-        if event_type == b'windows_generic_MSG':
+        if os.name == 'nt' and event_type == b'windows_generic_MSG':
             event = wintypes.MSG.from_address(int(message))
             if ((event.message == WM_WTSSESSION_CHANGE and event.wParam in SESSION_END_EVENTS) or
                     (event.message == WM_POWERBROADCAST and event.wParam in SUSPEND_EVENTS)):
                 self.lock()
         return super().nativeEvent(event_type, message)
+
+    def application_state_changed(self, state):
+        # Unix preview: conservatively lock on focus loss until native session
+        # lock/suspend integration is available and tested for each desktop.
+        if os.name != 'nt' and state != C.Qt.ApplicationActive and self.process is not None:
+            self.lock()
 
     def toggle_maximize(self):
         self.showNormal() if self.isMaximized() else self.showMaximized()
@@ -560,7 +574,13 @@ class Vault(W.QWidget):
             glass.toggled.connect(self.set_glass)
             dialog.layout.addWidget(glass)
         dialog.layout.addSpacing(7)
-        dialog.layout.addWidget(button('Firefox-Verbindung öffnen', lambda: dialog.done(2)))
+        firefox = button('Firefox-Verbindung öffnen', lambda: dialog.done(2))
+        firefox.setEnabled(os.name == 'nt')
+        dialog.layout.addWidget(firefox)
+        if os.name != 'nt':
+            note = label('Firefox-Kopplung folgt für dieses System. Der Tresor sperrt sich beim Wechsel in eine andere App.', 'muted')
+            note.setWordWrap(True)
+            dialog.layout.addWidget(note)
         dialog.layout.addWidget(button('Hinweise zur Nutzung', lambda: dialog.done(5)))
         dialog.layout.addWidget(dialog.error)
         dialog.layout.addWidget(button('Schließen', dialog.accept))
@@ -627,6 +647,12 @@ class Vault(W.QWidget):
         self.surface.update()
 
     def firefox_panel(self):
+        if os.name != 'nt':
+            dialog = Panel(self, 'Firefox-Verbindung', 'Die sichere Firefox-Kopplung ist in dieser Vorschau nur unter Windows verfügbar.')
+            dialog.layout.addWidget(button('Schließen', dialog.accept))
+            self.show_panel(dialog)
+            dialog.deleteLater()
+            return
         dialog = Panel(self, 'Firefox')
         intro = label('', 'welcomeIntro')
         intro.setWordWrap(True)
@@ -943,7 +969,10 @@ class Vault(W.QWidget):
         return super().eventFilter(watched, event)
 
     def check_idle(self):
-        if self.process and time.monotonic() >= self.deadline:
+        wall = time.time()
+        unexpected_gap = os.name != 'nt' and not 0 <= wall - self.last_wall_check <= 10
+        self.last_wall_check = wall
+        if self.process and (unexpected_gap or time.monotonic() >= self.deadline):
             self.lock()
         self.update_firefox_status()
 
@@ -1595,15 +1624,17 @@ def main():
         if G.QPixmap(str(HERE / 'vault-emblem.png')).isNull() or zxcvbn is None:
             raise VaultError('Bundled Vault assets or password estimator missing.')
         zxcvbn('test only vault bundle phrase 92')
-        library = ChannelLibrary(HERE / 'vault_firefox_channel.dll')
-        channel = Channel(library)
-        channel.close()
+        if os.name == 'nt':
+            library = ChannelLibrary(HERE / 'vault_firefox_channel.dll')
+            channel = Channel(library)
+            channel.close()
         with TemporaryDirectory(prefix='kcv-bundle-check-') as scratch:
             root = Path(scratch)
-            manifest = firefox_manifest(root)
-            host = Path(json.loads(manifest.read_bytes())['path'])
-            if not host.is_relative_to(root) or host.read_bytes() != backend('vault-firefox-host').read_bytes():
-                raise VaultError('Bundled Firefox native host could not be provisioned.')
+            if os.name == 'nt':
+                manifest = firefox_manifest(root)
+                host = Path(json.loads(manifest.read_bytes())['path'])
+                if not host.is_relative_to(root) or host.read_bytes() != backend('vault-firefox-host').read_bytes():
+                    raise VaultError('Bundled Firefox native host could not be provisioned.')
             request = dict(action='open', path=str(root / 'test.kcv'),
                            password='test only vault bundle phrase 92', create=True,
                            recovery=secrets.token_hex(32))
@@ -1614,7 +1645,7 @@ def main():
                 result = subprocess.run(
                     [str(backend()), 'desktop-session'], input=json.dumps(request) + '\n',
                     capture_output=True, encoding='utf-8', check=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW, timeout=30,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=30,
                 )
                 if json.loads(result.stdout).get('entries') != []:
                     raise VaultError('Bundled backend could not open a test vault.')

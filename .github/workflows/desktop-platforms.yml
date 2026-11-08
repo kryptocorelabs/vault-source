@@ -1,0 +1,47 @@
+name: Vault desktop platforms
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Linux Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libxcb-cursor0
+      - run: python -m pip install -r apps/vault/desktop/requirements-onefile.txt
+      - run: cargo +1.99.1 build --locked --release -p kryptocore-vault
+      - name: Exercise desktop creation, recovery, backups and platform locking
+        env:
+          KCV_TEST_SCREENSHOTS: dist/vault-native-layout
+        run: python apps/vault/tests/desktop-workflow.py
+      - name: Build native evaluation package and verify bundled runtime
+        env:
+          RUSTUP_TOOLCHAIN: '1.99.1'
+        run: python apps/vault/package-desktop.py --output dist/vault-native --work dist/vault-native-work
+      - uses: actions/upload-artifact@v6
+        with:
+          name: vault-native-${{ matrix.os }}
+          path: |
+            dist/vault-native/*
+            dist/vault-native-layout/*.png
+          if-no-files-found: error
+          compression-level: 0

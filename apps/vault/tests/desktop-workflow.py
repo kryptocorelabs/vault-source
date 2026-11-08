@@ -36,7 +36,9 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     app.setStyleSheet(ui.STYLE)
     app.setQuitOnLastWindowClosed(False)
     for filename in ('segoeui.ttf', 'consola.ttf'):
-        ui.G.QFontDatabase.addApplicationFont(str(Path('C:/Windows/Fonts') / filename))
+        font = Path('C:/Windows/Fonts') / filename
+        if font.is_file():
+            ui.G.QFontDatabase.addApplicationFont(str(font))
 
     class TestVault(ui.Vault):
         def setup_firefox(self):
@@ -243,5 +245,10 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     assert backup_path.read_bytes() == original == vault_path.read_bytes()
     # The unchanged recovery secret is rewrapped rather than copying its old slot.
     assert disposable.read_bytes()[93:181] != original[93:181]
+    if os.name != 'nt':
+        vault.application_state_changed(ui.C.Qt.ApplicationInactive)
+        assert vault.process is None and not vault.entries
+        assert vault.firefox_indicator.isHidden()
+        assert folder.joinpath('KryptoCoreLabs/Vault').stat().st_mode & 0o777 == 0o700
     vault.close()
     print('Usage and recovery warnings verified. The backup refused overwrite and a disposable copy recovered the synthetic login.')
