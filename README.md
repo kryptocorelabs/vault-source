@@ -21,6 +21,10 @@ We welcome community testing, code reviews and scrutiny of our security
 assumptions. Please use synthetic data and report suspected vulnerabilities
 privately through the project's security-reporting channel.
 
+See the [unreleased recovery hardening](apps/vault/RECOVERY-HARDENING.md) and
+[Vault threat model](apps/vault/THREAT_MODEL.md) for seed rotation, old-file access,
+rollback and Python/Qt memory limits. Existing published binaries are unchanged.
+
 ## Build and test
 
 ```sh

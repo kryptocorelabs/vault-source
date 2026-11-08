@@ -579,7 +579,8 @@ class Vault(W.QWidget):
         dialog = Panel(self, 'Hinweise zur Nutzung')
         for title, message in (
             ('VERSCHLÜSSELUNG', 'Vault verschlüsselt gespeicherte Logins lokal. Fehler, Geräteausfall oder ein kompromittiertes System können trotzdem zu Verlust oder Offenlegung führen. Nutze die Vorschau mit Testdaten.'),
-            ('SICHERUNG', 'Lege regelmäßig verschlüsselte Kopien auf einem getrennten Datenträger ab. Bewahre das passende Notfallblatt geschützt und getrennt auf. Prüfe den Zugang an einer zusätzlichen Kopie.'),
+            ('SICHERUNG', 'Lege regelmäßig verschlüsselte Kopien auf einem getrennten Datenträger ab. Bewahre das passende Notfallblatt geschützt und getrennt auf. Prüfe den Zugang an einer zusätzlichen Kopie. Alte Kopien behalten ihren damaligen Passwort- und Notfallzugang, auch nach dem Zurücksetzen.'),
+            ('ALTE DATEISTÄNDE', 'Vault kann eine ältere, gültig verschlüsselte Datei nicht automatisch als veraltet erkennen. Prüfe bei einer Wiederherstellung den erwarteten Stand deiner Einträge.'),
         ):
             dialog.layout.addWidget(label(title, 'eyebrow'))
             detail = label(message, 'muted')
@@ -592,7 +593,8 @@ class Vault(W.QWidget):
     def backup(self):
         dialog = Panel(self, 'Sicherung erstellen',
                        'Speichere die verschlüsselte Kopie möglichst auf einem anderen Datenträger. '
-                       'Teste den Zugang später an einer zusätzlichen Kopie.')
+                       'Teste den Zugang später an einer zusätzlichen Kopie. '
+                       'Diese Sicherung behält ihr jetziges Passwort und Notfallblatt, auch wenn du sie später im aktiven Tresor änderst.')
 
         def save_backup():
             stamp = time.strftime('%Y-%m-%d-%H%M%S')
@@ -1195,7 +1197,10 @@ class Vault(W.QWidget):
             return
         dialog = Panel(self, 'Tresor wiederherstellen',
                        f'{Path(path).name}\nDas Passwort wird in dieser Datei zurückgesetzt. '
-                       'Für einen Test wähle eine zusätzliche Kopie.')
+                       'Für einen Test wähle eine zusätzliche Kopie. '
+                       'Der interne Datenschlüssel wird dabei erneuert; dein Notfallblatt bleibt gültig. '
+                       'Alte Tresorkopien bleiben mit ihrem damaligen Passwort oder Notfallblatt lesbar. '
+                       'Falls jemand eine Kopie lesen konnte, ändere auch die darin gespeicherten Passwörter bei den jeweiligen Diensten.')
         recovery = dialog.secret('Schlüssel vom Notfallblatt')
         password = dialog.secret('Neues Tresorpasswort')
         confirm = dialog.secret('Neues Tresorpasswort bestätigen')
@@ -1220,7 +1225,11 @@ class Vault(W.QWidget):
 
         dialog.finish('Passwort zurücksetzen', reset)
         recovery.setFocus()
-        if self.show_panel(dialog):
+        accepted = self.show_panel(dialog)
+        recovery.clear()
+        password.clear()
+        confirm.clear()
+        if accepted:
             self.show_library(path)
         dialog.deleteLater()
 

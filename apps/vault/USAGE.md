@@ -35,6 +35,23 @@ they were taken. Keep the password or emergency sheet that matches each
 backup you retain. If a file stops opening, preserve it and try a separate
 copy of your latest known good backup.
 
+## Password resets and old copies
+
+Changing or resetting the vault password affects the selected file only. Old
+copies remain readable with the password or emergency sheet that matched them.
+If someone may have read a copy, also change the stored account passwords at
+their services; changing the vault password cannot revoke exposed credentials.
+
+The [unreleased recovery hardening](RECOVERY-HARDENING.md) also replaces the
+internal data key while retaining the current emergency sheet. Earlier builds
+kept that key when resetting the password. Keep a verified backup before trying
+an updated build. After a reset, make and test a fresh backup. If the emergency
+sheet itself may be exposed, renew it from the unlocked vault as well; older
+copies still retain their former recovery access.
+
+Vault cannot automatically detect that an authentic file is an older snapshot.
+When restoring a copy, check that it contains the expected recent entries.
+
 ## Security reports and rights
 
 Report suspected vulnerabilities through the

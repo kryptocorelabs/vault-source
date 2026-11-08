@@ -186,6 +186,7 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     def save_backup():
         panel = vault.dialog
         assert panel.windowTitle() == 'Sicherung erstellen'
+        assert any('jetziges Passwort' in label.text() for label in panel.findChildren(ui.W.QLabel))
         click(panel, 'Sicherungsdatei speichern')
         assert 'existiert bereits' in panel.error.text(), panel.error.text()
         assert vault_path.read_bytes() == original
@@ -201,11 +202,33 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     disposable = folder / 'restore-test.kcv'
     disposable.write_bytes(backup_path.read_bytes())
     selections.append(disposable)
+    cancelled_fields = []
+
+    def cancel_recovery():
+        panel = vault.dialog
+        for field in panel.findChildren(ui.W.QLineEdit):
+            cancelled_fields.append(field)
+            field.setText('Synthetic cancelled recovery input')
+        click(panel, 'Abbrechen')
+
+    later(cancel_recovery)
+    vault.recover()
+    check()
+    assert cancelled_fields and all(field.text() == '' for field in cancelled_fields)
+    assert vault.process is None and disposable.read_bytes() == original
+    selections.append(disposable)
+    recovery_fields = []
 
     def recover_copy():
         panel = vault.dialog
         assert any('zusätzliche Kopie' in label.text() for label in panel.findChildren(ui.W.QLabel))
+        assert any('Alte Tresorkopien bleiben' in label.text() and 'Datenschlüssel' in label.text()
+                   for label in panel.findChildren(ui.W.QLabel))
+        if output := os.environ.get('KCV_TEST_SCREENSHOTS'):
+            Path(output).mkdir(parents=True, exist_ok=True)
+            panel.grab().save(str(Path(output) / 'vault-recovery-warning.png'))
         for field in panel.findChildren(ui.W.QLineEdit):
+            recovery_fields.append(field)
             value = synthetic_key[0] if field.accessibleName().startswith('Schlüssel') else 'Synthetic replacement vault password'
             field.setText(value)
         click(panel, 'Passwort zurücksetzen')
@@ -214,8 +237,11 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     later(recover_copy)
     vault.recover()
     check()
+    assert recovery_fields and all(field.text() == '' for field in recovery_fields)
     assert vault.active_vault_path == str(disposable)
     assert vault.request(action='reveal', site=site)['password'] == secret
     assert backup_path.read_bytes() == original == vault_path.read_bytes()
+    # The unchanged recovery secret is rewrapped rather than copying its old slot.
+    assert disposable.read_bytes()[93:181] != original[93:181]
     vault.close()
     print('Usage and recovery warnings verified. The backup refused overwrite and a disposable copy recovered the synthetic login.')

@@ -16,6 +16,10 @@ We welcome community testing, code reviews and scrutiny of our security
 assumptions. Please use synthetic data and report suspected vulnerabilities
 privately through the project's security-reporting channel.
 
+The unreleased [recovery hardening](RECOVERY-HARDENING.md) rotates the payload
+seed on password reset. Existing published binaries may retain the old behavior.
+See [Vault's threat model](THREAT_MODEL.md) for snapshot, rollback and memory limits.
+
 ## End-user builds and development
 
 The [single-file Windows build](WINDOWS-ONEFILE.md) bundles Python, Qt and the
