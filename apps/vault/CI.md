@@ -18,7 +18,10 @@ Windows, Linux and macOS jobs also build Vault and a separately checked-out
 Rescue worker pinned to apps-source commit
 `65f28e4cfd35020616d62bcf764b2025c10c49ab`. The real stdio protocols exercise
 KCV1/KCV2/KCV3 password and recovery exports, Unicode records, backup identity,
-re-key/renewal, rollback/downgrade rejection and unchanged inputs. This is
+re-key/renewal, rollback/downgrade rejection and unchanged inputs. POSIX runs
+also verify that exports through linked destination folders are rejected;
+temporary fixtures use resolved paths so macOS system aliases do not bypass
+or accidentally trigger that guard. This is
 interoperability testing between apps sharing the format implementation, not
 an independent cryptographic implementation. Local cache tests and Qt workflow
 tests cover first observation, remembered minima, failed opens and active-session

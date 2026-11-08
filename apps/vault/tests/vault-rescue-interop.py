@@ -53,7 +53,7 @@ def export(source, target, secret, route='password', expect=True):
     frame = b''.join(struct.pack('<I', len(part)) + part for part in parts)
     result = subprocess.run([str(rescue_exe)], input=frame, capture_output=True, timeout=45, check=True)
     reply = json.loads(result.stdout)
-    assert reply['ok'] == expect, 'Unexpected Rescue success/failure'
+    assert reply['ok'] == expect, f'Unexpected Rescue result: {source.name}, {route}, expected success={expect}'
     assert source.read_bytes() == before, 'Rescue modified its source'
     if expect:
         records = json.loads(target.read_text(encoding='utf-8'))
@@ -63,7 +63,9 @@ def export(source, target, secret, route='password', expect=True):
 
 
 with tempfile.TemporaryDirectory(prefix='vault-rescue-interop-') as folder:
-    folder = Path(folder)
+    # macOS's default temporary directory can include /var -> /private/var.
+    # Use the actual path; Rescue deliberately rejects linked output ancestors.
+    folder = Path(folder).resolve()
     for label, key in [('KCV1', None), ('KCV2', recovery)]:
         file = folder / (label + '.kcv')
         client = Vault()
@@ -73,6 +75,11 @@ with tempfile.TemporaryDirectory(prefix='vault-rescue-interop-') as folder:
         client.call(action='backup', destination=str(snapshot))
         assert file.read_bytes() == snapshot.read_bytes()
         export(file, folder/(label+'-password.json'), password)
+        if label == 'KCV1' and os.name == 'posix':
+            alias = folder/'linked-output'
+            alias.symlink_to(folder, target_is_directory=True)
+            export(file, alias/'rejected-linked-output.json', password, expect=False)
+            assert not (folder/'rejected-linked-output.json').exists()
         if key:
             export(snapshot, folder/'KCV2-recovery.json', recovery, 'recovery_key')
         client.close()
