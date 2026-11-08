@@ -28,7 +28,9 @@ remain sensitive even after editing the active vault. The current emergency
 sheet can also unlock later files until it is renewed. If it may be exposed,
 renew it from the unlocked vault and protect the replacement separately.
 
-An older, authentic file can replace a newer one and still open successfully.
+KCV1/KCV2 do not detect whole-file rollback. The unreleased, opt-in
+[KCV3 epoch profile](EPOCHS.md) adds a best-effort local high-water check.
+Without retained trusted local state, an older, authentic file can still open.
 There is no trusted monotonic counter or external freshness record. AEAD detects
 modification, not rollback of an entire valid file. Dated, separately stored
 backups and checking expected entries help recovery but do not prevent rollback.

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use zeroize::Zeroizing;
 
-use crate::{browser, container, lock_writer, origin, save, Login};
+use crate::{browser, container, lock_writer, origin, Login};
 
 // A legal 4 MiB vault entry fits even when the GUI escapes Unicode in JSON.
 const MAX_REQUEST: u64 = 16 * 1024 * 1024;
@@ -22,11 +22,18 @@ enum Request {
         password: Zeroizing<String>,
         create: bool,
         recovery: Option<Zeroizing<String>>,
+        #[serde(default)]
+        minimum_revision: Option<container::Revision>,
     },
     Recover {
         path: PathBuf,
         recovery: Zeroizing<String>,
         password: Zeroizing<String>,
+        #[serde(default)]
+        minimum_revision: Option<container::Revision>,
+    },
+    EnableEpoch {
+        destination: PathBuf,
     },
     EnableRecovery {
         recovery: Zeroizing<String>,
@@ -55,28 +62,48 @@ struct Session {
     path: PathBuf,
     password: Zeroizing<String>,
     share: Option<thread::JoinHandle<()>>,
+    revision: Option<container::Revision>,
 }
 
 impl Session {
-    fn entries(&self) -> Result<Vec<Login>, &'static str> {
-        let data = container::open(&self.path, self.password.as_bytes())?;
-        serde_json::from_slice(&data).map_err(|_| "Ungültige Tresoreinträge")
+    fn entries(&mut self) -> Result<Vec<Login>, &'static str> {
+        let (data, observed) =
+            container::open_with_revision(&self.path, self.password.as_bytes(), false)?;
+        container::check_revision(observed, self.revision)?;
+        let entries = serde_json::from_slice(&data).map_err(|_| "Ungültige Tresoreinträge")?;
+        self.revision = observed;
+        Ok(entries)
     }
 
     fn handle(&mut self, request: Request) -> Result<Value, &'static str> {
+        if let Request::EnableEpoch { destination } = &request {
+            let _lock = lock_writer(&self.path)?;
+            let entries = self.entries()?;
+            let revision =
+                container::enable_epoch_copy(&self.path, destination, self.password.as_bytes())?;
+            self.path = destination.clone();
+            self.revision = Some(revision);
+            return Ok(list(&entries));
+        }
         if let Request::Backup { destination } = &request {
             let _lock = lock_writer(&self.path)?;
-            container::backup(&self.path, destination, self.password.as_bytes())?;
+            self.revision = container::backup_with_revision(
+                &self.path,
+                destination,
+                self.password.as_bytes(),
+                self.revision,
+            )?;
             return Ok(json!({}));
         }
         if let Request::EnableRecovery { recovery } = &request {
             check_recovery(recovery)?;
             let _lock = lock_writer(&self.path)?;
-            container::enable_recovery(
+            self.revision = container::enable_recovery_with_revision(
                 &self.path,
                 self.password.as_bytes(),
                 recovery.as_bytes(),
                 false,
+                self.revision,
             )?;
             return Ok(json!({}));
         }
@@ -165,9 +192,19 @@ impl Session {
             Request::Open { .. }
             | Request::Recover { .. }
             | Request::EnableRecovery { .. }
+            | Request::EnableEpoch { .. }
             | Request::Backup { .. } => return Err("Tresor ist bereits geöffnet"),
         }
-        save(&self.path, &self.password, &entries)?;
+        let encoded = Zeroizing::new(
+            serde_json::to_vec(&entries).map_err(|_| "Einträge konnten nicht kodiert werden")?,
+        );
+        self.revision = container::save_with_revision(
+            &self.path,
+            self.password.as_bytes(),
+            &encoded,
+            false,
+            self.revision,
+        )?;
         Ok(list(&entries))
     }
 }
@@ -212,8 +249,12 @@ pub fn run() -> Result<(), &'static str> {
                         password,
                         create,
                         recovery,
+                        minimum_revision,
                     } => (|| {
                         if create {
+                            if minimum_revision.is_some() {
+                                return Err("Dieser Speicherort gehört bereits zu einem geschützten Tresor. Wähle einen neuen Namen.");
+                            }
                             if password.chars().count() < 15 {
                                 return Err("Mindestens 15 Zeichen verwenden");
                             }
@@ -230,10 +271,11 @@ pub fn run() -> Result<(), &'static str> {
                                 container::save(&path, password.as_bytes(), b"[]", true)?;
                             }
                         }
-                        let opened = Session {
+                        let mut opened = Session {
                             path,
                             password,
                             share: None,
+                            revision: minimum_revision,
                         };
                         let entries = opened.entries()?;
                         session = Some(opened);
@@ -243,21 +285,24 @@ pub fn run() -> Result<(), &'static str> {
                         path,
                         recovery,
                         password,
+                        minimum_revision,
                     } => (|| {
                         check_recovery(&recovery)?;
                         if password.chars().count() < 15 {
                             return Err("Mindestens 15 Zeichen verwenden");
                         }
                         let _lock = lock_writer(&path)?;
-                        let entries = container::reset_password(
+                        let (entries, revision) = container::reset_password_with_revision(
                             &path,
                             recovery.as_bytes(),
                             password.as_bytes(),
+                            minimum_revision,
                         )?;
                         let opened = Session {
                             path,
                             password,
                             share: None,
+                            revision,
                         };
                         session = Some(opened);
                         Ok(list(&entries))
@@ -267,7 +312,19 @@ pub fn run() -> Result<(), &'static str> {
             },
             Err(_) => Err("Ungültige Desktop-Anfrage"),
         };
-        let mut response = result.unwrap_or_else(|error| json!({"error": error}));
+        let mut response = result.unwrap_or_else(|error| {
+            if error == container::REVISION_REJECTED {
+                json!({"error": error, "code": "revision_rejected"})
+            } else {
+                json!({"error": error})
+            }
+        });
+        if response.get("error").is_none() {
+            if let Some(active) = &session {
+                response["revision"] =
+                    serde_json::to_value(active.revision).map_err(|_| "Kodierfehler")?;
+            }
+        }
         let encoded = serde_json::to_vec(&response);
         for field in ["password", "code"] {
             if let Some(Value::String(secret)) = response.get_mut(field).map(Value::take) {

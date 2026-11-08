@@ -6,13 +6,23 @@ changes and CI runs. The public `kryptocorelabs/vault` repository hosts
 release notes and downloads.
 
 The Vault workflow runs on pushes, pull requests, manual dispatches and a
-weekly schedule. It checks KCV2 tampering and truncation, write failures,
+weekly schedule. It checks KCV2/KCV3 tampering and truncation, write failures,
 recovery seed rotation, rejection of keys recovered from old snapshots,
 ordinary-save seed stability and repeated recovery resets,
 the native channel, browser session invalidation, Rust advisories and licenses,
 and Python advisories. The Firefox session tests run in a mocked WebExtension
 environment. Real Firefox and Windows integration testing remains a release
 check.
+
+Windows, Linux and macOS jobs also build Vault and a separately checked-out
+Rescue worker pinned to apps-source commit
+`65f28e4cfd35020616d62bcf764b2025c10c49ab`. The real stdio protocols exercise
+KCV1/KCV2/KCV3 password and recovery exports, Unicode records, backup identity,
+re-key/renewal, rollback/downgrade rejection and unchanged inputs. This is
+interoperability testing between apps sharing the format implementation, not
+an independent cryptographic implementation. Local cache tests and Qt workflow
+tests cover first observation, remembered minima, failed opens and active-session
+locking. Update the reviewed peer pin deliberately when its reader changes.
 
 The Windows build job runs after those checks pass. It builds the native
 backend, helper, and channel DLL with the lockfile, then compares the contents

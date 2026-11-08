@@ -250,6 +250,69 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     assert backup_path.read_bytes() == original == vault_path.read_bytes()
     # The unchanged recovery secret is rewrapped rather than copying its old slot.
     assert disposable.read_bytes()[93:181] != original[93:181]
+    protected = folder / 'versioned.kcv'
+    selections.append(protected)
+    before_migration = disposable.read_bytes()
+    previous_browser_session = vault.firefox_epoch
+
+    def activate_epoch():
+        assert vault.dialog.windowTitle() == 'Versionsvergleich aktivieren'
+        if output := os.environ.get('KCV_TEST_SCREENSHOTS'):
+            vault.dialog.grab().save(str(Path(output) / 'vault-epoch-opt-in.png'))
+        click(vault.dialog, 'Neue Kopie anlegen')
+
+    later(activate_epoch)
+    vault.enable_epoch()
+    check()
+    assert protected.read_bytes().startswith(b'KCV3\0')
+    assert disposable.read_bytes() == before_migration
+    assert vault.active_revision['epoch'] == 1
+    assert vault.firefox_epoch != previous_browser_session
+    stale = protected.read_bytes()
+    vault.entries = vault.request(action='put', previous=site, site=site, username=username, password=secret)['entries']
+    assert vault.active_revision['epoch'] == 2
+    current = protected.read_bytes()
+    vault.lock()
+    protected.write_bytes(stale)
+
+    def reject_older_epoch():
+        panel = vault.dialog
+        for field in panel.findChildren(ui.W.QLineEdit):
+            if field.accessibleName().startswith('Tresorpasswort'):
+                field.setText('Synthetic replacement vault password')
+        click(panel, 'Entsperren')
+        assert panel.isVisible(), 'Rollback rejection closed the explanation dialog'
+        assert 'Älterer oder anderer Tresorstand' in panel.error.text(), panel.error.text()
+        click(panel, 'Abbrechen')
+
+    later(reject_older_epoch)
+    vault.open(False, str(protected))
+    check()
+    assert vault.process is None and protected.read_bytes() == stale
+    protected.write_bytes(current)
+
+    def open_current_epoch():
+        panel = vault.dialog
+        for field in panel.findChildren(ui.W.QLineEdit):
+            if field.accessibleName().startswith('Tresorpasswort'):
+                field.setText('Synthetic replacement vault password')
+        click(panel, 'Entsperren')
+
+    later(open_current_epoch)
+    vault.open(False, str(protected))
+    check()
+    assert vault.active_revision['epoch'] == 2 and vault.process is not None
+    protected.write_bytes(stale)
+    try:
+        vault.request(action='reveal', site=site)
+        raise AssertionError('Live rollback released a password')
+    except ui.VaultError:
+        pass
+    assert vault.process is None and vault.active_revision is None
+    protected.write_bytes(current)
+    later(open_current_epoch)
+    vault.open(False, str(protected))
+    check()
     if os.name != 'nt':
         vault.application_state_changed(ui.C.Qt.ApplicationInactive)
         assert vault.process is None and not vault.entries

@@ -26,6 +26,9 @@ plaintext transport or key store is used on other platforms.
 
 [Security in 30 seconds](https://github.com/kryptocorelabs/kryptocore/blob/main/SECURITY-IN-BRIEF.md) · [Rescue-first guide](https://github.com/kryptocorelabs/kryptocore/blob/main/RESCUE-FIRST.md) · [Verify a download](https://github.com/kryptocorelabs/kryptocore/blob/main/VERIFY-DOWNLOADS.md)
 
+The unreleased [optional epoch profile](EPOCHS.md) creates a KCV3 copy with
+a local rollback warning policy. KCV1/KCV2 defaults and existing files remain unchanged.
+
 ## End-user builds and development
 
 The [single-file Windows build](WINDOWS-ONEFILE.md) bundles Python, Qt and the

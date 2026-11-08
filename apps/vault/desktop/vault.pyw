@@ -17,6 +17,7 @@ import time
 
 from PySide6 import QtCore as C, QtGui as G, QtNetwork as N, QtWidgets as W
 from firefox_channel import Channel, ChannelError, ChannelLibrary
+import vault_epochs
 
 HERE = Path(__file__).resolve().parent
 ROOT = None if getattr(sys, 'frozen', False) else HERE.parents[2]
@@ -470,6 +471,7 @@ class Vault(W.QWidget):
         self.surface.setProperty('glass', self.glass_supported and self.preferences.value('appearance/glass', True, bool))
         self.vault_mode = 'strict' if self.preferences.value('vault/mode') == 'strict' else 'standard'
         self.active_vault_path = ''
+        self.active_revision = None
         self.last_vault_path = self.preferences.value('vault/recent', '', str) if self.vault_mode == 'standard' else ''
         self.deadline = 0
         self.last_wall_check = time.time()
@@ -581,6 +583,15 @@ class Vault(W.QWidget):
         backup_action.setEnabled(self.process is not None)
         dialog.layout.addWidget(backup_action)
         dialog.layout.addWidget(recovery_action)
+        dialog.layout.addSpacing(7)
+        dialog.layout.addWidget(label('ÄLTERE DATEISTÄNDE ERKENNEN', 'eyebrow'))
+        epoch_hint = label('Optional: Eine neue KCV3-Kopie mit lokalem Versionsvergleich anlegen. Ältere Apps können diese Kopie nicht öffnen.'
+                           if self.active_revision is None else f"Dateistand {self.active_revision['epoch']} · lokaler Versionsvergleich aktiv", 'muted')
+        epoch_hint.setWordWrap(True)
+        dialog.layout.addWidget(epoch_hint)
+        epoch_action = button('Versionsvergleich als neue Kopie aktivieren', lambda: dialog.done(6))
+        epoch_action.setEnabled(self.process is not None and self.active_revision is None)
+        dialog.layout.addWidget(epoch_action)
         if self.glass_supported:
             dialog.layout.addSpacing(7)
             dialog.layout.addWidget(label('DARSTELLUNG', 'eyebrow'))
@@ -609,6 +620,53 @@ class Vault(W.QWidget):
             self.backup()
         elif result == 5:
             self.usage_panel()
+        elif result == 6 and self.process is not None:
+            self.enable_epoch()
+
+    def epoch_cache(self, path, revision=None, observe=False):
+        lock = C.QLockFile(str(self.settings_folder / 'epoch-observations.lock'))
+        lock.setStaleLockTime(0)
+        if not lock.tryLock(1500):
+            raise VaultError('Der lokale Versionsspeicher ist gerade belegt.')
+        try:
+            file = self.settings_folder / 'epoch-observations.json'
+            state = vault_epochs.load(file)
+            if not observe:
+                return vault_epochs.minimum(state, path)
+            if vault_epochs.observe(state, path, revision):
+                write_local_file(file, json.dumps(state).encode('utf-8'))
+        except (OSError, ValueError) as error:
+            raise VaultError(str(error)) from error
+        finally:
+            lock.unlock()
+
+    def enable_epoch(self):
+        dialog = Panel(self, 'Versionsvergleich aktivieren',
+                       'Es entsteht eine neue KCV3-Kopie. Das Original bleibt erhalten und dein Notfallblatt bleibt gültig. '
+                       'Nutze für die Kopie nur aktuelle Vault- und Rescue-Versionen mit KCV3-Unterstützung. '
+                       'Der Vergleich gilt auf diesem Gerät und kann ein vollständiges Zurücksetzen von Datei und lokalem Speicher nicht erkennen.')
+        def create_copy():
+            path, _ = W.QFileDialog.getSaveFileName(dialog, 'Neue KCV3-Kopie speichern', 'Mein Tresor-versioniert.kcv',
+                                                   'KryptoCore-Tresor (*.kcv)', options=W.QFileDialog.DontConfirmOverwrite)
+            if not path:
+                return
+            if not path.lower().endswith('.kcv'):
+                path += '.kcv'
+            try:
+                if self.epoch_cache(path) is not None:
+                    raise VaultError('Dieser Speicherort ist bereits einem geschützten Tresor zugeordnet. Wähle einen neuen Namen.')
+                self.entries = self.request(action='enable_epoch', destination=path)['entries']
+            except VaultError as error:
+                dialog.error.setText(str(error))
+                return
+            dialog.accept()
+            self.firefox_epoch = secrets.token_hex(16)
+            self.cancel_firefox_requests()
+            self.show_library(path)
+            self.status.setText('Versionsvergleich aktiv · Originaldatei unverändert.')
+        dialog.finish('Neue Kopie anlegen', create_copy)
+        self.show_panel(dialog)
+        dialog.deleteLater()
 
     def usage_panel(self):
         dialog = Panel(self, 'Hinweise zur Nutzung')
@@ -994,6 +1052,14 @@ class Vault(W.QWidget):
     def request(self, **payload):
         if self.process is None:
             raise VaultError('Der Tresor ist gesperrt.')
+        action = payload.get('action')
+        path = payload.get('path', self.active_vault_path)
+        if action == 'enable_epoch':
+            path = payload['destination']
+        if action in ('open', 'recover'):
+            minimum = self.epoch_cache(path)
+            if minimum is not None:
+                payload['minimum_revision'] = minimum
         try:
             self.process.stdin.write(json.dumps(payload) + '\n')
             self.process.stdin.flush()
@@ -1002,7 +1068,19 @@ class Vault(W.QWidget):
             self.lock()
             raise VaultError('Vault-Verbindung wurde beendet.') from error
         if 'error' in reply:
+            if reply.get('code') == 'revision_rejected' and action not in ('open', 'recover'):
+                self.lock()
             raise VaultError(reply['error'])
+        if path and 'revision' in reply:
+            try:
+                self.epoch_cache(path, reply['revision'], observe=True)
+            except VaultError:
+                if action in ('open', 'recover'):
+                    self.stop_session()
+                else:
+                    self.lock()
+                raise
+            self.active_revision = reply['revision']
         return reply
 
     def stop_session(self):
@@ -1027,6 +1105,7 @@ class Vault(W.QWidget):
         self.stop_session()
         self.entries = []
         self.active_vault_path = ''
+        self.active_revision = None
         self.search.clear()
         self.refresh()
         self.pages.setCurrentIndex(0)

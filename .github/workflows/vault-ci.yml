@@ -25,6 +25,21 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install 1.99.1 --profile minimal
       - run: cargo +1.99.1 test --locked --release -p kryptocore-vault -p kryptocore-vault-format -p vault-firefox-channel -- --test-threads=1
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: python apps/vault/tests/epoch-cache.py
+      - name: Check out the reviewed independent Rescue reader
+        uses: actions/checkout@v6
+        with:
+          repository: kryptocorelabs/apps-source
+          ref: 65f28e4cfd35020616d62bcf764b2025c10c49ab
+          path: rescue-peer
+          persist-credentials: false
+      - run: cargo +1.99.1 build --locked --release -p kryptocore-vault
+      - run: cargo +1.99.1 build --locked --release --manifest-path rescue-peer/Cargo.toml -p kryptocore-rescue
+      - name: Vault to Rescue real-worker interoperability
+        run: python apps/vault/tests/vault-rescue-interop.py --vault target/release/kryptocore-vault --rescue rescue-peer/target/release/kryptocore-rescue
 
   browser-sessions:
     runs-on: ubuntu-24.04
