@@ -121,10 +121,16 @@ QLabel#brandCaption { color: #99aebb; font-size: 10px; }
 def desktop_style():
     if os.name == 'nt':
         return STYLE
-    def family(role):
-        return G.QFontDatabase.systemFont(role).family().replace('"', '')
-    return STYLE.replace('"Segoe UI"', '"' + family(G.QFontDatabase.SystemFont.GeneralFont) + '"').replace(
-        '"Consolas"', '"' + family(G.QFontDatabase.SystemFont.FixedFont) + '"')
+    available = set(G.QFontDatabase.families())
+    def family(role, preferred):
+        return next((name for name in preferred if name in available),
+                    G.QFontDatabase.systemFont(role).family()).replace('"', '')
+    general = family(G.QFontDatabase.SystemFont.GeneralFont,
+                     ('Noto Sans', 'DejaVu Sans', 'Liberation Sans') if sys.platform == 'linux'
+                     else ('Helvetica Neue', 'Arial'))
+    fixed = family(G.QFontDatabase.SystemFont.FixedFont,
+                   ('DejaVu Sans Mono', 'Liberation Mono', 'Menlo', 'Monaco'))
+    return STYLE.replace('"Segoe UI"', '"' + general + '"').replace('"Consolas"', '"' + fixed + '"')
 
 
 class VaultError(Exception):

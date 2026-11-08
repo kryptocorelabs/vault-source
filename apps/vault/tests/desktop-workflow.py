@@ -49,6 +49,8 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
 
     vault = TestVault()
     vault.show()
+    heading = vault.findChild(ui.W.QLabel, 'welcomeTitle')
+    print('Native UI font:', ui.G.QFontInfo(heading.font()).family())
     errors = []
     selections = []
     synthetic_key = []
