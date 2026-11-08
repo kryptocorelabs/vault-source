@@ -673,7 +673,7 @@ class Vault(W.QWidget):
         for title, message in (
             ('VERSCHLÜSSELUNG', 'Vault verschlüsselt gespeicherte Logins lokal. Fehler, Geräteausfall oder ein kompromittiertes System können trotzdem zu Verlust oder Offenlegung führen. Nutze die Vorschau mit Testdaten.'),
             ('SICHERUNG', 'Lege regelmäßig verschlüsselte Kopien auf einem getrennten Datenträger ab. Bewahre das passende Notfallblatt geschützt und getrennt auf. Prüfe den Zugang an einer zusätzlichen Kopie. Alte Kopien behalten ihren damaligen Passwort- und Notfallzugang, auch nach dem Zurücksetzen.'),
-            ('ALTE DATEISTÄNDE', 'Vault kann eine ältere, gültig verschlüsselte Datei nicht automatisch als veraltet erkennen. Prüfe bei einer Wiederherstellung den erwarteten Stand deiner Einträge.'),
+            ('ALTE DATEISTÄNDE', 'KCV1/KCV2 erkennen ältere, gültige Dateien nicht. Der optionale KCV3-Versionsvergleich braucht den lokalen Versionsspeicher. Ein gemeinsames Zurücksetzen beider lässt sich damit nicht erkennen. Prüfe bei einer Wiederherstellung den erwarteten Stand.'),
         ):
             dialog.layout.addWidget(label(title, 'eyebrow'))
             detail = label(message, 'muted')
