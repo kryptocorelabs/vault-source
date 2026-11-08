@@ -60,7 +60,7 @@ QFrame#card, QFrame#details {
 }
 QLabel#eyebrow { color: #80e5cf; font-size: 11px; font-weight: 650; }
 QLabel#heading { font-size: 28px; font-weight: 650; }
-QLabel#section { font-size: 21px; font-weight: 650; }
+QLabel#section, QLabel[healthValue="true"] { font-size: 21px; font-weight: 650; }
 QLabel#muted { color: #99aebb; }
 QLabel#error { color: #ffbaa6; }
 QPushButton { background: #20343f; border: 1px solid #30454e; border-radius: 12px; padding: 9px 12px; }
@@ -583,6 +583,15 @@ class Vault(W.QWidget):
         backup_action.setEnabled(self.process is not None)
         dialog.layout.addWidget(backup_action)
         dialog.layout.addWidget(recovery_action)
+        health_action = button('Tresor-Status', lambda: dialog.done(7))
+        health_action.setEnabled(self.process is not None)
+        dialog.layout.addWidget(health_action)
+        dialog.layout.addSpacing(7)
+        dialog.layout.addWidget(label('UMZIEHEN', 'eyebrow'))
+        export_action = button('Logins als JSON exportieren', lambda: dialog.done(8))
+        export_action.setEnabled(self.process is not None)
+        dialog.layout.addWidget(export_action)
+        dialog.layout.addWidget(button('Neuen Tresor aus JSON erstellen', lambda: dialog.done(9)))
         dialog.layout.addSpacing(7)
         dialog.layout.addWidget(label('ÄLTERE DATEISTÄNDE ERKENNEN', 'eyebrow'))
         epoch_hint = label('Optional: Eine neue KCV3-Kopie mit lokalem Versionsvergleich anlegen. Ältere Apps können diese Kopie nicht öffnen.'
@@ -622,6 +631,140 @@ class Vault(W.QWidget):
             self.usage_panel()
         elif result == 6 and self.process is not None:
             self.enable_epoch()
+        elif result == 7 and self.process is not None:
+            self.health()
+        elif result == 8 and self.process is not None:
+            self.export_json()
+        elif result == 9:
+            self.import_json()
+
+    def backup_record_key(self, path):
+        return 'backups/' + vault_epochs.path_key(path) + '/completed_unix'
+
+    def last_backup_at(self, path):
+        try:
+            stamp = int(self.preferences.value(self.backup_record_key(path), '0'))
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return stamp if 0 < stamp <= time.time() + 300 else None
+
+    def health(self):
+        try:
+            info = self.request(action='health')
+        except VaultError as error:
+            self.status.setText(str(error))
+            return
+        dialog = Panel(self, 'Tresor-Status', Path(self.active_vault_path).name)
+        facts = W.QHBoxLayout()
+        for title, value, name in (
+            ('LOGINS', str(info['entry_count']), 'healthEntryCount'),
+            ('NOTFALLZUGANG', 'Eingerichtet' if info['recovery_available'] else 'Nicht eingerichtet', 'healthRecovery'),
+        ):
+            frame = W.QFrame()
+            frame.setObjectName('card')
+            card = W.QVBoxLayout(frame)
+            card.setContentsMargins(13, 12, 13, 12)
+            card.addWidget(label(title, 'eyebrow'))
+            value_label = label(value, 'section')
+            value_label.setObjectName(name)
+            value_label.setProperty('healthValue', True)
+            value_label.setWordWrap(True)
+            card.addWidget(value_label)
+            facts.addWidget(frame, 1)
+        dialog.layout.addLayout(facts)
+
+        def date(stamp):
+            return C.QDateTime.fromSecsSinceEpoch(stamp).toLocalTime().toString('dd.MM.yyyy · HH:mm')
+
+        backup = self.last_backup_at(self.active_vault_path)
+        modified = info['file_modified_unix']
+        dialog.layout.addWidget(label('ZULETZT HIER GESICHERT', 'eyebrow'))
+        dialog.layout.addWidget(label(date(backup) if backup else 'Noch keine Sicherung hier erfasst', 'healthBackup'))
+        dialog.layout.addWidget(label('DATEI ZULETZT GEÄNDERT', 'eyebrow'))
+        modified_text = date(modified) if modified is not None and 0 <= modified < 2**63 else 'Unbekannt'
+        dialog.layout.addWidget(label(modified_text, 'healthModified'))
+        if modified is not None and time.time() - modified >= 180 * 86400:
+            hint = label('Seit mindestens 180 Tagen nicht geändert. Prüfe, ob dies der erwartete Stand ist, und teste eine Sicherung.', 'muted')
+            hint.setObjectName('healthAgeHint')
+            hint.setWordWrap(True)
+            dialog.layout.addWidget(hint)
+        elif modified is not None and modified > time.time() + 300:
+            hint = label('Das Dateidatum liegt in der Zukunft. Prüfe die Systemuhr und den erwarteten Dateistand.', 'muted')
+            hint.setWordWrap(True)
+            dialog.layout.addWidget(hint)
+        detail = label(f"KCV{info['format_version']} · Momentaufnahme beim Öffnen. "
+                       'Sicherungszeit und Dateidatum sind lokale Hinweise. Sie belegen weder eine vorhandene, lesbare Sicherung noch die Sicherheit des Tresors.', 'muted')
+        detail.setWordWrap(True)
+        dialog.layout.addWidget(detail)
+        dialog.layout.addWidget(button('Sicherung erstellen', lambda: dialog.done(2)))
+        dialog.layout.addWidget(button('Schließen', dialog.accept))
+        result = self.show_panel(dialog)
+        dialog.deleteLater()
+        if result == 2 and self.process is not None:
+            self.backup()
+
+    def export_json(self):
+        dialog = Panel(self, 'JSON-Export',
+                       'Diese Datei enthält alle Logins und Passwörter unverschlüsselt. '
+                       'Speichere sie nur in einem geschützten Ordner und räume sie nach dem Umzug auf. '
+                       'Eine verschlüsselte Sicherung ist die bessere Wahl für Backups.')
+        confirmation = W.QCheckBox('Alle Passwörter unverschlüsselt exportieren')
+        dialog.layout.addWidget(confirmation)
+
+        def save():
+            path, _ = W.QFileDialog.getSaveFileName(dialog, 'JSON-Export speichern', 'Vault-Umzug.json', 'JSON (*.json)',
+                                                   options=W.QFileDialog.DontConfirmOverwrite)
+            if not path:
+                return
+            if not path.lower().endswith('.json'):
+                path += '.json'
+            try:
+                self.request(action='export', destination=path, confirm_plaintext=confirmation.isChecked())
+            except VaultError as error:
+                dialog.error.setText(str(error))
+                return
+            dialog.accept()
+            self.status.setText('JSON-Export gespeichert · enthält unverschlüsselte Passwörter.')
+
+        submit = dialog.finish('JSON-Datei speichern', save)
+        submit.setEnabled(False)
+        confirmation.toggled.connect(submit.setEnabled)
+        self.show_panel(dialog)
+        dialog.deleteLater()
+
+    def import_json(self):
+        source, _ = W.QFileDialog.getOpenFileName(self, 'JSON-Export auswählen', '', 'JSON (*.json)')
+        if not source:
+            return
+        dialog = Panel(self, 'Aus Export umziehen', Path(source).name)
+        try:
+            result = subprocess.run([str(backend()), 'desktop-session'],
+                input=json.dumps({'action': 'inspect_import', 'source': source}) + '\n',
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, encoding='utf-8', timeout=15,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), check=True)
+            preview = json.loads(result.stdout)
+            if 'error' in preview:
+                raise VaultError(preview['error'])
+        except (OSError, ValueError, subprocess.SubprocessError, VaultError) as error:
+            dialog.error.setText(str(error) if isinstance(error, VaultError) else 'Die Exportdatei konnte nicht geprüft werden.')
+            dialog.layout.addWidget(dialog.error)
+            dialog.layout.addWidget(button('Schließen', dialog.reject))
+            self.show_panel(dialog)
+            dialog.deleteLater()
+            return
+        noun = 'Login wird' if preview['entry_count'] == 1 else 'Logins werden'
+        hint = label(f"{preview['entry_count']} {noun} in einen neuen Tresor übernommen. "
+                     'Du wählst ein neues Passwort und erhältst ein neues Notfallblatt. '
+                     'Der interne Datenschlüssel wird frisch erzeugt. Bestehende Dateien bleiben erhalten. '
+                     'Ein offener Tresor wird beim Fortfahren gesperrt.', 'muted')
+        hint.setWordWrap(True)
+        dialog.layout.addWidget(hint)
+        dialog.finish('Neuen Tresor einrichten', dialog.accept)
+        accepted = self.show_panel(dialog)
+        dialog.deleteLater()
+        if accepted:
+            self.lock()
+            self.open(True, import_source=source, import_digest=preview['digest'], import_count=preview['entry_count'])
 
     def epoch_cache(self, path, revision=None, observe=False):
         lock = C.QLockFile(str(self.settings_folder / 'epoch-observations.lock'))
@@ -705,7 +848,10 @@ class Vault(W.QWidget):
             except VaultError as error:
                 dialog.error.setText(str(error))
                 return
-            self.status.setText('Verschlüsselte Sicherung gespeichert.')
+            self.preferences.setValue(self.backup_record_key(self.active_vault_path), str(int(time.time())))
+            self.preferences.sync()
+            self.status.setText('Verschlüsselte Sicherung gespeichert.' if self.preferences.status() == C.QSettings.NoError
+                                else 'Sicherung gespeichert · Zeitpunkt konnte nicht lokal erfasst werden.')
             dialog.accept()
 
         dialog.finish('Sicherungsdatei speichern', save_backup)
@@ -906,6 +1052,7 @@ class Vault(W.QWidget):
         )
         secondary.setSpacing(10)
         outer.addLayout(secondary)
+        outer.addWidget(button('Aus JSON-Export umziehen', self.import_json, 'chrome'), alignment=C.Qt.AlignLeft)
         self.other_vault = button('Anderen Tresor öffnen', lambda: self.open(False), 'chrome')
         self.other_vault.hide()
         outer.addWidget(self.other_vault, alignment=C.Qt.AlignLeft)
@@ -969,6 +1116,9 @@ class Vault(W.QWidget):
         header = W.QHBoxLayout()
         header.addLayout(intro, 1)
         header.setStretch(0, 1)
+        health_button = button('Status', self.health, 'chrome')
+        health_button.setAccessibleName('Tresor-Status öffnen')
+        header.addWidget(health_button, alignment=C.Qt.AlignTop)
         header.addWidget(button('Sperren', self.lock), alignment=C.Qt.AlignTop)
         layout.addLayout(header)
         new_login = StartTile('Neuer Login', 'Zugangsdaten speichern', '+', lambda: self.edit(), primary=True)
@@ -1056,7 +1206,7 @@ class Vault(W.QWidget):
         path = payload.get('path', self.active_vault_path)
         if action == 'enable_epoch':
             path = payload['destination']
-        if action in ('open', 'recover'):
+        if action in ('open', 'recover', 'import'):
             minimum = self.epoch_cache(path)
             if minimum is not None:
                 payload['minimum_revision'] = minimum
@@ -1068,14 +1218,14 @@ class Vault(W.QWidget):
             self.lock()
             raise VaultError('Vault-Verbindung wurde beendet.') from error
         if 'error' in reply:
-            if reply.get('code') == 'revision_rejected' and action not in ('open', 'recover'):
+            if reply.get('code') == 'revision_rejected' and action not in ('open', 'recover', 'import'):
                 self.lock()
             raise VaultError(reply['error'])
         if path and 'revision' in reply:
             try:
                 self.epoch_cache(path, reply['revision'], observe=True)
             except VaultError:
-                if action in ('open', 'recover'):
+                if action in ('open', 'recover', 'import'):
                     self.stop_session()
                 else:
                     self.lock()
@@ -1130,14 +1280,15 @@ class Vault(W.QWidget):
         finally:
             self.dialog = None
 
-    def open(self, create, path=''):
+    def open(self, create, path='', *, import_source=None, import_digest=None, import_count=0):
         epoch = self.firefox_epoch
         if not create and not path:
             path, _ = W.QFileDialog.getOpenFileName(self, 'Tresor öffnen', '', 'KryptoCore-Tresor (*.kcv)')
             if not path or self.firefox_epoch != epoch:
                 return
-        dialog = Panel(self, 'Neuer Tresor' if create else 'Tresor entsperren',
-                       'Wähle, wo dein Tresor liegt und wie du ihn öffnest.' if create else Path(path).name)
+        dialog = Panel(self, 'Tresor aus Export' if import_source else ('Neuer Tresor' if create else 'Tresor entsperren'),
+                       (f'{import_count} Logins · neuer Datenschlüssel · neues Notfallblatt' if import_source else
+                        'Wähle, wo dein Tresor liegt und wie du ihn öffnest.') if create else Path(path).name)
         if create:
             destination = dialog.field('Speicherort')
             destination.setReadOnly(True)
@@ -1219,8 +1370,12 @@ class Vault(W.QWidget):
                     [str(backend()), 'desktop-session'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL, encoding='utf-8', creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
                 )
-                self.entries = self.request(action='open', path=path, password=password.text(), create=create,
-                                            recovery=recovery)['entries']
+                if import_source:
+                    self.entries = self.request(action='import', source=import_source, expected_digest=import_digest,
+                                                path=path, password=password.text(), recovery=recovery)['entries']
+                else:
+                    self.entries = self.request(action='open', path=path, password=password.text(), create=create,
+                                                recovery=recovery)['entries']
             except (OSError, VaultError) as error:
                 self.stop_session()
                 dialog.error.setText(str(error))
@@ -1236,6 +1391,8 @@ class Vault(W.QWidget):
         (choose if create else password).setFocus()
         if self.show_panel(dialog):
             self.show_library(path)
+            if import_source:
+                self.status.setText(f'{len(self.entries)} Logins importiert · JSON bleibt unverschlüsselt.')
         dialog.deleteLater()
 
     def show_new_recovery_sheet(self, parent, vault_name):

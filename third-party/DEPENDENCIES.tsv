@@ -256,3 +256,4 @@ Vault desktop setup	direct	PySide6-Essentials	6.10.3	LGPL-3.0-only selected wher
 Vault desktop setup	vendored in PySide6-Essentials	Qt Essentials DLLs and plugins	6.10.3	LGPL-3.0-only selected where available		https://doc.qt.io/qt-6.10/licensing.html	licenses/Qt-6.10.3/GPL-3.0-only.txt; licenses/Qt-6.10.3/LGPL-3.0-only.txt
 Vault desktop setup	transitive, explicitly pinned	shiboken6	6.10.3	LGPL-3.0-only selected where available		https://doc.qt.io/qt-6.10/licensing.html	licenses/Qt-6.10.3/GPL-3.0-only.txt; licenses/Qt-6.10.3/LGPL-3.0-only.txt
 Vault desktop setup	direct	zxcvbn	4.5.0	MIT		https://pypi.org/project/zxcvbn/4.5.0/	licenses/zxcvbn-4.5.0/LICENSE.txt
+Vault desktop migration	direct	sha2	0.10.9	MIT OR Apache-2.0	a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283	https://github.com/RustCrypto/hashes	licenses/sha2-0.10.9/LICENSE-MIT;licenses/sha2-0.10.9/LICENSE-APACHE

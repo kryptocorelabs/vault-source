@@ -1,9 +1,11 @@
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 import os
+import json
 from pathlib import Path
 import sys
 import tempfile
+import time
 
 root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(root / 'apps/vault/desktop'))
@@ -83,6 +85,8 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
         controls = {button.text(): button for button in vault.dialog.findChildren(ui.W.QPushButton)}
         assert not controls['Notfallblatt einrichten oder erneuern'].isEnabled()
         assert not controls['Sicherung erstellen'].isEnabled()
+        assert not controls['Tresor-Status'].isEnabled()
+        assert not controls['Logins als JSON exportieren'].isEnabled()
         later(check_usage)
         click(vault.dialog, 'Hinweise zur Nutzung')
 
@@ -150,6 +154,16 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     assert pdf_path.read_bytes().startswith(b'%PDF')
     assert vault.dialog is None and not selections
 
+    def empty_health():
+        assert vault.dialog.findChild(ui.W.QLabel, 'healthEntryCount').text() == '0'
+        assert vault.dialog.findChild(ui.W.QLabel, 'healthRecovery').text() == 'Eingerichtet'
+        assert 'keine Sicherung' in vault.dialog.findChild(ui.W.QLabel, 'healthBackup').text()
+        click(vault.dialog, 'Schließen')
+
+    later(empty_health)
+    vault.health()
+    check()
+
     def open_recovery_from_settings():
         later(check_recovery_panel)
         click(vault.dialog, 'Notfallblatt einrichten oder erneuern')
@@ -197,6 +211,7 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
         click(panel, 'Sicherungsdatei speichern')
         assert 'existiert bereits' in panel.error.text(), panel.error.text()
         assert vault_path.read_bytes() == original
+        assert vault.last_backup_at(vault_path) is None, 'Rejected backup was recorded as successful'
         click(panel, 'Sicherungsdatei speichern')
         assert not panel.isVisible(), panel.error.text()
 
@@ -204,6 +219,27 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     vault.settings()
     check()
     assert backup_path.read_bytes() == original == vault_path.read_bytes()
+    receipt = vault.last_backup_at(vault_path)
+    assert receipt is not None and 0 <= time.time() - receipt < 60
+    original_date = vault_path.stat().st_mtime
+    old_date = time.time() - 200 * 86400
+    os.utime(vault_path, (old_date, old_date))
+
+    def backed_up_health():
+        panel = vault.dialog
+        assert panel.windowTitle() == 'Tresor-Status'
+        assert panel.findChild(ui.W.QLabel, 'healthEntryCount').text() == '1'
+        assert 'keine Sicherung' not in panel.findChild(ui.W.QLabel, 'healthBackup').text()
+        assert panel.findChild(ui.W.QLabel, 'healthAgeHint') is not None
+        if output := os.environ.get('KCV_TEST_SCREENSHOTS'):
+            panel.grab().save(str(Path(output) / 'vault-health.png'))
+        click(panel, 'Schließen')
+
+    later(backed_up_health)
+    vault.health()
+    check()
+    assert vault_path.read_bytes() == original
+    os.utime(vault_path, (original_date, original_date))
     vault.lock()
 
     disposable = folder / 'restore-test.kcv'
@@ -313,10 +349,67 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     later(open_current_epoch)
     vault.open(False, str(protected))
     check()
+    # A plaintext export is deliberate; failures/cancel never overwrite source.
+    migration_json = folder / 'migration.json'
+    occupied_json = folder / 'occupied.json'
+    occupied_json.write_bytes(b'Preserve this existing file')
+    selections.extend((occupied_json, migration_json))
+
+    def export_migration():
+        panel = vault.dialog
+        save = next(b for b in panel.findChildren(ui.W.QPushButton) if b.text() == 'JSON-Datei speichern')
+        assert not save.isEnabled() and not migration_json.exists()
+        assert any('unverschlüsselt' in item.text() for item in panel.findChildren(ui.W.QLabel))
+        panel.findChild(ui.W.QCheckBox).setChecked(True)
+        click(panel, 'JSON-Datei speichern')
+        assert 'existiert bereits' in panel.error.text()
+        assert occupied_json.read_bytes() == b'Preserve this existing file'
+        assert protected.read_bytes() == current
+        click(panel, 'JSON-Datei speichern')
+        assert not panel.isVisible(), panel.error.text()
+
+    later(export_migration)
+    vault.export_json()
+    check()
+    exported = json.loads(migration_json.read_text(encoding='utf-8'))
+    assert exported['schema_version'] == 1 and exported['entries'][0]['password'] == secret
+    assert protected.read_bytes() == current
+    original_process = vault.process
+    selections.append(migration_json)
+    later(lambda: click(vault.dialog, 'Abbrechen'))
+    vault.import_json()
+    check()
+    assert vault.process is original_process and protected.read_bytes() == current
+
+    # Actual import follows the existing password/strength/emergency-sheet wizard.
+    imported_path = folder/'migrated.kcv'
+    imported_pdf = folder/'migrated-emergency.pdf'
+    selections.extend((migration_json, imported_path, imported_pdf))
+
+    def migration_preview():
+        assert vault.dialog.windowTitle() == 'Aus Export umziehen'
+        if output := os.environ.get('KCV_TEST_SCREENSHOTS'):
+            vault.dialog.grab().save(str(Path(output) / 'vault-import-preview.png'))
+        later(migration_setup)
+        click(vault.dialog, 'Neuen Tresor einrichten')
+
+    def migration_setup():
+        assert vault.dialog.windowTitle() == 'Tresor aus Export'
+        enter_new_vault(show_and_save)
+
+    later(migration_preview)
+    vault.import_json()
+    check()
+    assert imported_path.read_bytes().startswith(b'KCV2\0')
+    assert imported_pdf.read_bytes().startswith(b'%PDF')
+    assert vault.active_vault_path == str(imported_path) and vault.process is not None
+    assert vault.request(action='reveal', site=site)['password'] == secret
+    assert vault.last_backup_at(imported_path) is None
+    assert protected.read_bytes() == current and json.loads(migration_json.read_bytes()) == exported
     if os.name != 'nt':
         vault.application_state_changed(ui.C.Qt.ApplicationInactive)
         assert vault.process is None and not vault.entries
         assert vault.firefox_indicator.isHidden()
         assert folder.joinpath('KryptoCoreLabs/Vault').stat().st_mode & 0o777 == 0o700
     vault.close()
-    print('Usage and recovery warnings verified. The backup refused overwrite and a disposable copy recovered the synthetic login.')
+    print('PASS: usage/recovery, successful-only backup receipts, health/age hints, explicit JSON export and new-vault import; source files preserved.')

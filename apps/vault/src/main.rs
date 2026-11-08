@@ -3,6 +3,7 @@
 mod browser;
 mod container;
 mod desktop;
+mod transfer;
 
 use std::{
     env,

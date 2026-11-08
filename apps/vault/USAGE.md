@@ -49,8 +49,21 @@ an updated build. After a reset, make and test a fresh backup. If the emergency
 sheet itself may be exposed, renew it from the unlocked vault as well; older
 copies still retain their former recovery access.
 
-Vault cannot automatically detect that an authentic file is an older snapshot.
-When restoring a copy, check that it contains the expected recent entries.
+KCV1/KCV2 cannot detect that an authentic file is an older snapshot. The
+[optional KCV3 profile](EPOCHS.md) adds a local history check with documented
+limits. When restoring a copy, check the expected recent entries.
+
+## Move and review a vault — development builds
+
+Use **Settings → Export logins as JSON** for a deliberate plaintext transfer,
+then **Create a new vault from JSON** to use fresh key material, a new password
+and a new emergency sheet. Rescue's JSON array is also accepted. Existing files
+are preserved; protect the unencrypted JSON. See [the migration guide](MIGRATION.md).
+
+**Status** beside **Lock**, or **Settings → Vault status**, shows entries,
+recovery-slot availability, the last backup recorded here and the filesystem
+modification date. Unknown backup history stays unknown. A 180-day-old date
+prompts a check; this is not a security score or proof that a backup is readable.
 
 ## Security reports and rights
 

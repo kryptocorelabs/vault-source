@@ -29,6 +29,10 @@ plaintext transport or key store is used on other platforms.
 The unreleased [optional epoch profile](EPOCHS.md) creates a KCV3 copy with
 a local rollback warning policy. KCV1/KCV2 defaults and existing files remain unchanged.
 
+Development builds also provide [JSON migration and Vault status](MIGRATION.md):
+export deliberately, create a new vault with fresh key material, and review
+entries, recovery availability, local backup receipts and filesystem age.
+
 ## End-user builds and development
 
 The [single-file Windows build](WINDOWS-ONEFILE.md) bundles Python, Qt and the
@@ -47,7 +51,7 @@ python apps/vault/desktop/vault.pyw
 
 See [CI and build consistency](CI.md) for tests and exact toolchain details.
 The [shared format reader](../../modules/vault-format/README.md) supports
-KCV1/KCV2; format/API compatibility changes must be explicit and tested.
+KCV1/KCV2 and opt-in KCV3; format/API compatibility changes must be explicit and tested.
 
 ## Everyday use
 

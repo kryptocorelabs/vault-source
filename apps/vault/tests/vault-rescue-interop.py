@@ -114,6 +114,9 @@ with tempfile.TemporaryDirectory(prefix='vault-rescue-interop-') as folder:
     # In-session rollback: no reveal, overwrite, or backup of the stale file.
     epoch_file.write_bytes(old_epoch)
     client.call(action='reveal', site=site, expect=False)
+    client.call(action='health', expect=False)
+    client.call(action='export', destination=str(folder/'rejected-stale.json'), confirm_plaintext=True, expect=False)
+    assert not (folder/'rejected-stale.json').exists()
     client.call(action='put', site='https://other.invalid', username='Synthetic', password='Synthetic', expect=False)
     rejected_backup = folder/'rejected-backup.kcv'
     client.call(action='backup', destination=str(rejected_backup), expect=False)
@@ -136,4 +139,104 @@ with tempfile.TemporaryDirectory(prefix='vault-rescue-interop-') as folder:
     epoch_file.write_bytes(damaged)
     export(epoch_file, folder/'tampered-epoch.json', replacement, expect=False)
 
-print('PASS: real Vault/Rescue KCV1/KCV2/KCV3 exports, Unicode, backups, re-key, recovery renewal, rollback/downgrade and tamper rejection; sources preserved.')
+    # Migration uses the real Vault producer and an independently built old Rescue
+    # reader: both versioned exports and existing Rescue arrays must round-trip.
+    transfer = folder/'vault-export.json'
+    client = Vault()
+    client.call(action='health', expect=False)
+    client.call(action='export', destination=str(transfer), confirm_plaintext=True, expect=False)
+    client.call(action='open', path=str(source), password=password, create=False)
+    health = client.call(action='health')
+    assert health['entry_count'] == 1 and health['format_version'] == 2 and health['recovery_available']
+    assert type(health['file_modified_unix']) is int
+    client.call(action='export', destination=str(transfer), confirm_plaintext=False, expect=False)
+    assert not transfer.exists()
+    result = client.call(action='export', destination=str(transfer), confirm_plaintext=True)
+    assert result['exported_entries'] == 1 and login_secret not in json.dumps(result)
+    plain = transfer.read_bytes()
+    assert json.loads(plain) == dict(format='kryptocore-vault-export', schema_version=1,
+        entries=[dict(origin=site, username=username, password=login_secret)])
+    client.call(action='export', destination=str(transfer), confirm_plaintext=True, expect=False)
+    client.call(action='export', destination=str(source), confirm_plaintext=True, expect=False)
+    assert source.read_bytes() == source_bytes and transfer.read_bytes() == plain
+    if os.name == 'posix':
+        client.call(action='export', destination=str(folder/'linked-output/rejected-desktop.json'), confirm_plaintext=True, expect=False)
+        assert not (folder/'rejected-desktop.json').exists()
+        assert transfer.stat().st_mode & 0o777 == 0o600
+    client.close()
+
+    client = Vault()
+    client.call(action='open', path=str(folder/'KCV1.kcv'), password=password, create=False)
+    health = client.call(action='health')
+    assert health['format_version'] == 1 and not health['recovery_available']
+    client.close()
+    epoch_file.write_bytes(latest)
+    client = Vault()
+    client.call(action='open', path=str(epoch_file), password=replacement, create=False, minimum_revision=fourth)
+    health = client.call(action='health')
+    assert health['format_version'] == 3 and health['recovery_available'] and health['revision'] == fourth
+    client.close()
+
+    client = Vault()
+    preview = client.call(action='inspect_import', source=str(transfer))
+    assert preview['entry_count'] == 1 and len(preview['digest']) == 64 and login_secret not in json.dumps(preview)
+    client.call(action='inspect_import', source=str(folder), expect=False)
+    if os.name == 'posix':
+        fifo = folder/'special.json'
+        os.mkfifo(fifo)
+        client.call(action='inspect_import', source=str(fifo), expect=False)
+        input_alias = folder/'linked-input.json'
+        input_alias.symlink_to(transfer)
+        client.call(action='inspect_import', source=str(input_alias), expect=False)
+    rejected = folder/'rejected-import.kcv'
+    import_request = dict(action='import', source=str(transfer), expected_digest=preview['digest'],
+        path=str(rejected), password=replacement, recovery=new_recovery)
+    transfer.write_bytes(plain + b'\n')
+    client.call(**import_request, expect=False)
+    assert not rejected.exists()
+    transfer.write_bytes(plain)
+    for change in (dict(password='short'), dict(recovery='invalid'), dict(expected_digest='0'*64),
+                   dict(minimum_revision=fourth)):
+        client.call(**{**import_request, **change}, expect=False)
+        assert not rejected.exists()
+    client.call(**{**import_request, 'path': str(source)}, expect=False)
+    assert source.read_bytes() == source_bytes
+
+    invalid = folder/'invalid-export.json'
+    record = dict(origin=site, username=username, password=login_secret)
+    malformed = [b'not JSON', b'\xff', b'['*150+b']'*150,
+        json.dumps({'format':'kryptocore-vault-export', 'schema_version':2, 'entries':[record]}).encode(),
+        json.dumps({'format':'kryptocore-vault-export', 'schema_version':1, 'entries':[record], 'extra':True}).encode(),
+        json.dumps([{'origin':site, 'username':username}]).encode(),
+        json.dumps([{**record, 'password':''}]).encode(),
+        json.dumps([{**record, 'origin':'https://user:secret@example.invalid'}]).encode(),
+        json.dumps([record, {**record, 'origin':site+'/different-path'}]).encode(),
+        json.dumps([{**record, 'password':'X'*(4*1024*1024)}]).encode(),
+        b' '*(16*1024*1024+1)]
+    for contents in malformed:
+        invalid.write_bytes(contents)
+        failure = client.call(action='inspect_import', source=str(invalid), expect=False)
+        assert login_secret not in json.dumps(failure)
+        client.call(**{**import_request, 'source': str(invalid)}, expect=False)
+        assert not rejected.exists() and source.read_bytes() == source_bytes
+    imported = folder/'imported-vault.kcv'
+    client.call(**{**import_request, 'path': str(imported)})
+    health = client.call(action='health')
+    assert health['entry_count'] == 1 and health['format_version'] == 2 and health['recovery_available']
+    assert imported.read_bytes().startswith(b'KCV2\0') and imported.read_bytes() != source_bytes
+    assert transfer.read_bytes() == plain and source.read_bytes() == source_bytes
+    export(imported, folder/'imported-password.json', replacement)
+    export(imported, folder/'imported-recovery.json', new_recovery, 'recovery_key')
+    export(imported, folder/'imported-old-password.json', password, expect=False)
+    client.close()
+    rescue_array = folder/'KCV2-recovery.json'
+    rescue_bytes = rescue_array.read_bytes()
+    client = Vault()
+    preview = client.call(action='inspect_import', source=str(rescue_array))
+    client.call(**{**import_request, 'source':str(rescue_array), 'expected_digest':preview['digest'],
+                  'path':str(folder/'imported-rescue.kcv')})
+    client.close()
+    export(folder/'imported-rescue.kcv', folder/'rescue-array-roundtrip.json', replacement)
+    assert rescue_array.read_bytes() == rescue_bytes
+
+print('PASS: real Vault/Rescue KCV1/KCV2/KCV3, versioned and legacy JSON migration, health, Unicode, backups, re-key, renewal, rollback/downgrade and tamper rejection; sources preserved.')

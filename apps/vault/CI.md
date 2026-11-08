@@ -27,6 +27,14 @@ an independent cryptographic implementation. Local cache tests and Qt workflow
 tests cover first observation, remembered minima, failed opens and active-session
 locking. Update the reviewed peer pin deliberately when its reader changes.
 
+The same real-worker driver covers versioned JSON exports and Rescue-array
+imports into newly seeded KCV2 vaults, health metadata, rejected duplicates,
+unknown versions/fields, oversized/malformed input, changed preview bytes,
+locked/unconfirmed exports and no-clobber destinations. Format tests compare
+fresh seeds and reject old-seed decryption of a newly created payload. Qt tests
+exercise the import/password/emergency-sheet flow, cancellation, explicit
+plaintext confirmation and successful-only per-path backup timestamps.
+
 The Windows build job runs after those checks pass. It builds the native
 backend, helper, and channel DLL with the lockfile, then compares the contents
 of two Firefox ZIPs from clean build directories. The comparison includes the

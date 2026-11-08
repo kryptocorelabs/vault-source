@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use zeroize::Zeroizing;
 
-use crate::{browser, container, lock_writer, origin, Login};
+use crate::{browser, container, lock_writer, origin, transfer, Login};
 
 // A legal 4 MiB vault entry fits even when the GUI escapes Unicode in JSON.
 const MAX_REQUEST: u64 = 16 * 1024 * 1024;
@@ -32,6 +32,23 @@ enum Request {
         #[serde(default)]
         minimum_revision: Option<container::Revision>,
     },
+    InspectImport {
+        source: PathBuf,
+    },
+    Import {
+        source: PathBuf,
+        expected_digest: String,
+        path: PathBuf,
+        password: Zeroizing<String>,
+        recovery: Zeroizing<String>,
+        #[serde(default)]
+        minimum_revision: Option<container::Revision>,
+    },
+    Export {
+        destination: PathBuf,
+        confirm_plaintext: bool,
+    },
+    Health,
     EnableEpoch {
         destination: PathBuf,
     },
@@ -67,15 +84,45 @@ struct Session {
 
 impl Session {
     fn entries(&mut self) -> Result<Vec<Login>, &'static str> {
-        let (data, observed) =
-            container::open_with_revision(&self.path, self.password.as_bytes(), false)?;
-        container::check_revision(observed, self.revision)?;
+        self.entries_with_metadata().map(|(entries, _)| entries)
+    }
+
+    fn entries_with_metadata(
+        &mut self,
+    ) -> Result<(Vec<Login>, container::VaultMetadata), &'static str> {
+        let (data, metadata) =
+            container::open_with_metadata(&self.path, self.password.as_bytes(), false)?;
+        container::check_revision(metadata.revision, self.revision)?;
         let entries = serde_json::from_slice(&data).map_err(|_| "Ungültige Tresoreinträge")?;
-        self.revision = observed;
-        Ok(entries)
+        self.revision = metadata.revision;
+        Ok((entries, metadata))
     }
 
     fn handle(&mut self, request: Request) -> Result<Value, &'static str> {
+        if matches!(request, Request::Health) {
+            let (entries, metadata) = self.entries_with_metadata()?;
+            let modified = std::fs::metadata(&self.path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs());
+            return Ok(
+                json!({"entry_count":entries.len(), "format_version":metadata.format_version,
+                "recovery_available":metadata.recovery_available, "file_modified_unix":modified}),
+            );
+        }
+        if let Request::Export {
+            destination,
+            confirm_plaintext,
+        } = &request
+        {
+            if !confirm_plaintext {
+                return Err("Bestätige zuerst den unverschlüsselten Export.");
+            }
+            let entries = self.entries()?;
+            transfer::export(destination, &entries, *confirm_plaintext)?;
+            return Ok(json!({"exported_entries":entries.len()}));
+        }
         if let Request::EnableEpoch { destination } = &request {
             let _lock = lock_writer(&self.path)?;
             let entries = self.entries()?;
@@ -191,6 +238,10 @@ impl Session {
             }
             Request::Open { .. }
             | Request::Recover { .. }
+            | Request::Import { .. }
+            | Request::InspectImport { .. }
+            | Request::Health
+            | Request::Export { .. }
             | Request::EnableRecovery { .. }
             | Request::EnableEpoch { .. }
             | Request::Backup { .. } => return Err("Tresor ist bereits geöffnet"),
@@ -244,6 +295,26 @@ pub fn run() -> Result<(), &'static str> {
             Ok(request) => match &mut session {
                 Some(session) => session.handle(request),
                 None => match request {
+                    Request::InspectImport { source } => transfer::prepare(&source).map(|prepared| {
+                        json!({"entry_count": prepared.entries.len(), "digest": prepared.digest})
+                    }),
+                    Request::Import { source, expected_digest, path, password, recovery, minimum_revision } => (|| {
+                        if minimum_revision.is_some() {
+                            return Err("Dieser Speicherort gehört bereits zu einem geschützten Tresor. Wähle einen neuen Namen.");
+                        }
+                        if password.chars().count() < 15 { return Err("Mindestens 15 Zeichen verwenden"); }
+                        check_recovery(&recovery)?;
+                        let prepared = transfer::prepare(&source)?;
+                        if prepared.digest != expected_digest {
+                            return Err("Die Exportdatei wurde seit der Vorschau geändert. Wähle sie erneut aus.");
+                        }
+                        let _lock = lock_writer(&path)?;
+                        container::create_with_recovery(&path, password.as_bytes(), recovery.as_bytes(), &prepared.data)?;
+                        let opened = Session {path, password, share: None, revision: None};
+                        let reply = list(&prepared.entries);
+                        session = Some(opened);
+                        Ok(reply)
+                    })(),
                     Request::Open {
                         path,
                         password,

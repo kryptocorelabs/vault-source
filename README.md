@@ -31,6 +31,10 @@ The local desktop has [native Linux/macOS build paths](apps/vault/PLATFORMS.md),
 with Intel and Apple Silicon CI packages. Firefox pairing is Windows-only.
 CI packages are unsigned evaluation artifacts, not replacements for current releases.
 
+Development builds include [JSON migration and Vault status](apps/vault/MIGRATION.md):
+create a new vault with fresh key material from a deliberate plaintext export,
+and review entry/recovery facts alongside local backup and file-age hints.
+
 ## Build and test
 
 ```sh

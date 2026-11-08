@@ -11,6 +11,11 @@ payload seed and key, browser pairing secrets, unlocked sessions and backups.
 The Rust parser/worker, Python/Qt UI, Firefox extension and native channel
 are separate boundaries. The OS, random source, dependencies and distributed
 binaries must be trustworthy. A filled website receives its login plaintext.
+JSON migration deliberately creates a plaintext copy on selected storage. The
+Rust worker validates versioned/Rescue JSON, bounds input and rejects duplicate
+websites before creating a fresh vault. The source/export directories and OS
+remain trusted. A preview digest detects changed bytes, not a trusted sender.
+Local backup receipts and filesystem dates are informational, editable state.
 
 ## Attacker capabilities and limits
 
@@ -24,6 +29,7 @@ binaries must be trustworthy. A filled website receives its login plaintext.
 | A local attacker reads UI/process memory | Rust clears selected owned buffers; Python/Qt/JSON copies, swap and crash dumps may persist. Locking stops access through the app but cannot guarantee forensic erasure. |
 | A relay or website requests browser access | The v5 encrypted channel, paired secret, origin/tab/frame/session checks and lock invalidation enforce their documented scope. A compromised extension, app or OS is outside that scope. |
 | Credentials were already filled, exported or copied | Vault cannot retract plaintext or reset the corresponding website accounts. The user must rotate affected service credentials. |
+| An export is stolen or imported from an untrusted sender | JSON has no encryption or origin authentication. It exposes every transferred login. A fresh vault seed protects future ciphertext, not this plaintext or the sender's claims. |
 
 ## Persistence and recovery
 

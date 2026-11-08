@@ -42,6 +42,21 @@ Vault does not guarantee erasure of all copies, swap or crash dumps. Do not rely
 on memory secrecy against a compromised process, user account or operating system.
 See the [Vault threat model](THREAT_MODEL.md) for trust boundaries.
 
+## Plaintext migration and local status
+
+The development [JSON migration workflow](MIGRATION.md) deliberately exports all
+login secrets to plaintext after explicit confirmation. Protect that file and
+its storage; deletion cannot guarantee erasure from snapshots or backups.
+Import validates the input and atomically creates a new KCV2 vault with fresh
+key material and a new GUI-generated emergency credential. It does not revoke
+old copies or rotate passwords at external services. The preview fingerprint
+detects an intervening file edit; it does not authenticate an export's sender.
+
+Vault status reports authenticated format/entry facts and untrusted local dates.
+Backup timestamps record successful GUI copies at a path, not continued existence
+or a restore test. A recovery slot does not prove that the user holds its matching
+emergency sheet. These indicators are not a security certification.
+
 ## Firefox channel
 
 The Windows app and add-on use the same pinned Snow implementation of
