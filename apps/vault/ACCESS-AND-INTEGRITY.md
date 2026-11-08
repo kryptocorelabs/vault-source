@@ -42,7 +42,10 @@ password change. Stale revisions and counter overflow are rejected before
 replacement. KCV1/KCV2/KCV3 interpretation, Core primitives and KDF parameters
 are unchanged. The worker changes its session password only after a successful
 atomic write. GUI success invalidates pending browser requests; persistent v5
-pairings remain. Cancellation and failed operations do not replace source data.
+pairings remain. Cancellation and rejected authentication/validation do not
+replace source data. If a local history-cache update fails after a committed
+write, the file can already contain the new password/key state. Preserve it and
+use the matching new credentials; see the [local-history limits](EPOCHS.md).
 
 ## What the short UI notes mean
 
