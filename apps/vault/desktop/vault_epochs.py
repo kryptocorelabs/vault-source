@@ -30,8 +30,11 @@ def load(path):
         raw = file.read(MAX_CACHE + 1)
     if len(raw) > MAX_CACHE:
         raise ValueError('Der lokale Versionsspeicher ist zu groß.')
-    state = json.loads(raw)
-    if not isinstance(state, dict) or set(state) != {'schema', 'vaults', 'paths'} or state['schema'] != 1:
+    try:
+        state = json.loads(raw)
+    except RecursionError as error:
+        raise ValueError('Ungültiger lokaler Versionsspeicher.') from error
+    if not isinstance(state, dict) or set(state) != {'schema', 'vaults', 'paths'} or type(state['schema']) is not int or state['schema'] != 1:
         raise ValueError('Ungültiger lokaler Versionsspeicher.')
     if not isinstance(state['vaults'], dict) or not isinstance(state['paths'], dict):
         raise ValueError('Ungültiger lokaler Versionsspeicher.')
@@ -40,7 +43,7 @@ def load(path):
         if identity != identity.lower() or len(identity) != 32:
             raise ValueError('Ungültige Tresorkennung.')
     for key, identity in state['paths'].items():
-        if len(key) != 64 or any(c not in '0123456789abcdef' for c in key) or identity not in state['vaults']:
+        if len(key) != 64 or any(c not in '0123456789abcdef' for c in key) or not isinstance(identity, str) or identity not in state['vaults']:
             raise ValueError('Ungültiger gespeicherter Dateibezug.')
     return state
 

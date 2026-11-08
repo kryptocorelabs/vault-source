@@ -35,7 +35,9 @@ class CacheTests(unittest.TestCase):
     def test_invalid_cache_and_invalid_authenticated_revision_fail_closed(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'cache.json'
-            for data in ('[]', '{}', '{"schema":2,"vaults":{},"paths":{}}'):
+            for data in ('[]', '{}', '{"schema":2,"vaults":{},"paths":{}}',
+                         json.dumps({'schema': 1, 'vaults': {}, 'paths': {'a'*64: []}}),
+                         '['*2000 + '0' + ']'*2000):
                 path.write_text(data, encoding='utf-8')
                 with self.assertRaises(ValueError):
                     epochs.load(path)
