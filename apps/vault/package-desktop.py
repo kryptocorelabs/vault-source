@@ -45,7 +45,12 @@ for name in binaries:
     options += ['--add-binary', str(native / name) + os.pathsep + '.']
 if system == 'macos':
     options += ['--osx-bundle-identifier', 'org.kryptocorelabs.vault']
-subprocess.run([*options, str(desktop / 'vault.pyw')], cwd=root, check=True)
+build_env = dict(os.environ)
+for name in ('PYTHONPATH', 'PYTHONHOME', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'QML2_IMPORT_PATH'):
+    build_env.pop(name, None)
+build_env['PYINSTALLER_CONFIG_DIR'] = str(work / 'pyinstaller-cache')
+build_env['PATH'] = os.pathsep.join([str(Path(sys.executable).parent), str(Path(os.environ['SystemRoot']) / 'System32'), os.environ['SystemRoot']]) if system == 'windows' else '/usr/bin:/bin:/usr/sbin:/sbin'
+subprocess.run([*options, str(desktop / 'vault.pyw')], cwd=root, env=build_env, check=True)
 application = build_output / ('KryptoCore-Vault.app' if system == 'macos' else 'KryptoCore-Vault' + suffix)
 executable = application / 'Contents/MacOS/KryptoCore-Vault' if system == 'macos' else application
 with tempfile.TemporaryDirectory(prefix='vault-portable-check-') as isolated:
