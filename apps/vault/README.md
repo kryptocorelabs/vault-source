@@ -24,6 +24,8 @@ See [desktop platforms](PLATFORMS.md) for native Linux and macOS build/test
 instructions and limitations. Firefox pairing remains Windows-only; no alternate
 plaintext transport or key store is used on other platforms.
 
+[Security in 30 seconds](https://github.com/kryptocorelabs/kryptocore/blob/main/SECURITY-IN-BRIEF.md) · [Rescue-first guide](https://github.com/kryptocorelabs/kryptocore/blob/main/RESCUE-FIRST.md) · [Verify a download](https://github.com/kryptocorelabs/kryptocore/blob/main/VERIFY-DOWNLOADS.md)
+
 ## End-user builds and development
 
 The [single-file Windows build](WINDOWS-ONEFILE.md) bundles Python, Qt and the
