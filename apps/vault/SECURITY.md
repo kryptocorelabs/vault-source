@@ -11,6 +11,12 @@ privately through the project's security-reporting channel.
 
 ## Password reset, snapshots and memory
 
+The development [unlocked password-change action](ACCESS-AND-INTEGRITY.md)
+retains the KCV2/KCV3 seed and recovery slot by default. A seed extracted from
+an earlier copy therefore still opens later payloads until rotation. Its explicit
+re-key mode generates a fresh seed and GUI recovery credential. Neither mode
+revokes earlier copies. KCV1 password changes always derive a fresh key.
+
 Resetting a password does not revoke old vault copies. Anyone with an old file
 and its matching password or emergency sheet can still read that snapshot.
 If credentials were exposed, change them at the corresponding services too.
@@ -56,6 +62,11 @@ Vault status reports authenticated format/entry facts and untrusted local dates.
 Backup timestamps record successful GUI copies at a path, not continued existence
 or a restore test. A recovery slot does not prove that the user holds its matching
 emergency sheet. These indicators are not a security certification.
+
+The optional SHA-256 view hashes a verified encrypted snapshot and can save a
+separate no-clobber reference. That reference needs independent trusted storage;
+replacing both defeats comparison. Matching checksums are not a signature,
+malware scan or full rollback detector. Expected edits also change fingerprints.
 
 ## Firefox channel
 

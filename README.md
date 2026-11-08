@@ -35,6 +35,10 @@ Development builds include [JSON migration and Vault status](apps/vault/MIGRATIO
 create a new vault with fresh key material from a deliberate plaintext export,
 and review entry/recovery facts alongside local backup and file-age hints.
 
+[Password changes and encrypted-file checksums](apps/vault/ACCESS-AND-INTEGRITY.md)
+add optional seed/recovery renewal and separately recorded SHA-256 references.
+Old snapshots remain readable; checksums do not establish a trusted publisher.
+
 ## Build and test
 
 ```sh

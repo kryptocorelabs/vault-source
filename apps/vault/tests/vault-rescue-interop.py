@@ -1,5 +1,6 @@
 """Exercise actual, independently built Vault and Rescue workers; synthetic data only."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -115,6 +116,7 @@ with tempfile.TemporaryDirectory(prefix='vault-rescue-interop-') as folder:
     epoch_file.write_bytes(old_epoch)
     client.call(action='reveal', site=site, expect=False)
     client.call(action='health', expect=False)
+    client.call(action='file_digest', expect=False)
     client.call(action='export', destination=str(folder/'rejected-stale.json'), confirm_plaintext=True, expect=False)
     assert not (folder/'rejected-stale.json').exists()
     client.call(action='put', site='https://other.invalid', username='Synthetic', password='Synthetic', expect=False)
@@ -239,4 +241,79 @@ with tempfile.TemporaryDirectory(prefix='vault-rescue-interop-') as folder:
     export(folder/'imported-rescue.kcv', folder/'rescue-array-roundtrip.json', replacement)
     assert rescue_array.read_bytes() == rescue_bytes
 
-print('PASS: real Vault/Rescue KCV1/KCV2/KCV3, versioned and legacy JSON migration, health, Unicode, backups, re-key, renewal, rollback/downgrade and tamper rejection; sources preserved.')
+    # Verify the credential/key distinction, exact snapshot digests and old-reader
+    # compatibility using the real workers for all three supported profiles.
+    changed_password = 'Synthetic ordinary changed password'
+    rotated_password = 'Synthetic explicitly rotated password'
+    fresh_recovery = 'fedcba9876543210' * 4
+    for profile, original_bytes, previous_password, previous_recovery in (
+        (1, (folder/'KCV1.kcv').read_bytes(), password, None),
+        (2, source_bytes, password, recovery),
+        (3, latest, replacement, new_recovery),
+    ):
+        candidate = folder/f'password-v{profile}.kcv'
+        candidate.write_bytes(original_bytes)
+        old_copy = folder/f'password-v{profile}-old.kcv'
+        old_copy.write_bytes(original_bytes)
+        client = Vault()
+        client.call(action='change_password', current_password=previous_password, password=changed_password,
+                    rotate_key=False, expect=False)
+        client.call(action='open', path=str(candidate), password=previous_password, create=False)
+        initial = client.call(action='file_digest')
+        assert initial['sha256'] == hashlib.sha256(original_bytes).hexdigest() and initial['bytes'] == len(original_bytes)
+        receipt = folder/f'password-v{profile}.sha256'
+        client.call(action='file_digest', destination=str(receipt), expect=False)
+        assert not receipt.exists()
+        client.call(action='file_digest', destination=str(receipt), expected_sha256=initial['sha256'].upper())
+        assert receipt.read_text(encoding='ascii') == initial['sha256']+'\n'
+        client.call(action='file_digest', destination=str(receipt), expected_sha256=initial['sha256'], expect=False)
+        client.call(action='file_digest', destination=str(candidate), expected_sha256=initial['sha256'], expect=False)
+        for expected in ('wrong-format', '0'*64):
+            client.call(action='file_digest', destination=str(folder/f'rejected-hash-{profile}.sha256'),
+                        expected_sha256=expected, expect=False)
+        if os.name == 'posix':
+            client.call(action='file_digest', destination=str(folder/f'linked-output/rejected-hash-{profile}.sha256'),
+                        expected_sha256=initial['sha256'], expect=False)
+            assert not (folder/f'rejected-hash-{profile}.sha256').exists()
+        assert candidate.read_bytes() == original_bytes
+        for change in (dict(current_password='wrong'), dict(password='short'), dict(password=previous_password)):
+            client.call(**{**dict(action='change_password', current_password=previous_password,
+                                  password=changed_password, rotate_key=False), **change}, expect=False)
+            assert candidate.read_bytes() == original_bytes
+        quick = client.call(action='change_password', current_password=previous_password,
+                            password=changed_password, rotate_key=False)
+        assert quick['password_changed'] and quick['key_rotated'] == (profile == 1)
+        assert not quick['new_recovery'] and previous_password not in json.dumps(quick)
+        export(candidate, folder/f'password-v{profile}-quick.json', changed_password)
+        export(candidate, folder/f'password-v{profile}-old-password.json', previous_password, expect=False)
+        if previous_recovery:
+            export(candidate, folder/f'password-v{profile}-kept-recovery.json', previous_recovery, 'recovery_key')
+        after_quick = candidate.read_bytes()
+        current_hash = client.call(action='file_digest')['sha256']
+        assert current_hash == hashlib.sha256(after_quick).hexdigest() and current_hash != initial['sha256']
+        stale_receipt = folder/f'password-v{profile}-stale.sha256'
+        client.call(action='file_digest', destination=str(stale_receipt), expected_sha256=initial['sha256'], expect=False)
+        assert not stale_receipt.exists()
+        if profile >= 2:
+            client.call(action='change_password', current_password=changed_password, password=rotated_password,
+                        rotate_key=True, expect=False)
+            assert candidate.read_bytes() == after_quick
+        rotated = client.call(action='change_password', current_password=changed_password, password=rotated_password,
+                              rotate_key=True, new_recovery=fresh_recovery if profile >= 2 else None)
+        assert rotated['key_rotated'] and rotated['new_recovery'] == (profile >= 2)
+        if profile == 3:
+            assert quick['revision']['epoch'] == 5 and rotated['revision']['epoch'] == 6
+            assert quick['revision']['vault_id'] == rotated['revision']['vault_id'] == fourth['vault_id']
+        assert client.call(action='health')['format_version'] == profile
+        export(candidate, folder/f'password-v{profile}-rotated.json', rotated_password)
+        export(candidate, folder/f'password-v{profile}-superseded.json', changed_password, expect=False)
+        if previous_recovery:
+            export(candidate, folder/f'password-v{profile}-revoked-recovery.json', previous_recovery, 'recovery_key', expect=False)
+            export(candidate, folder/f'password-v{profile}-new-recovery.json', fresh_recovery, 'recovery_key')
+        export(old_copy, folder/f'password-v{profile}-old-copy-readable.json', previous_password)
+        assert old_copy.read_bytes() == original_bytes
+        assert receipt.read_text(encoding='ascii') == initial['sha256']+'\n'
+        assert not (folder/f'rejected-hash-{profile}.sha256').exists()
+        client.close()
+
+print('PASS: real Vault/Rescue profiles, migration/health, password/key rotation, exact file digests and protected receipts, old-copy readability and negative cases; sources preserved.')

@@ -130,4 +130,4 @@ release hold are recorded in [TRADEMARK_REVIEW.md](TRADEMARK_REVIEW.md).
 
 ## Vault migration fingerprint
 
-Development Vault builds directly use RustCrypto `sha2` 0.10.9 (MIT OR Apache-2.0) to bind an import preview to the selected file bytes. This is not a new vault encryption or KDF profile. The resolved checksum is recorded in Cargo.lock and the dependency inventory. Original license texts: [MIT](third-party/licenses/sha2-0.10.9/LICENSE-MIT) and [Apache-2.0](third-party/licenses/sha2-0.10.9/LICENSE-APACHE).
+Development Vault builds directly use RustCrypto `sha2` 0.10.9 (MIT OR Apache-2.0) to bind an import preview to selected file bytes and compute encrypted-vault file fingerprints. This is not a new vault encryption or KDF profile. The resolved checksum is recorded in Cargo.lock and the dependency inventory. Original license texts: [MIT](third-party/licenses/sha2-0.10.9/LICENSE-MIT) and [Apache-2.0](third-party/licenses/sha2-0.10.9/LICENSE-APACHE).

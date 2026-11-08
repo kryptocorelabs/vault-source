@@ -7,6 +7,8 @@ use std::{
 
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{browser, container, lock_writer, origin, transfer, Login};
@@ -49,6 +51,17 @@ enum Request {
         confirm_plaintext: bool,
     },
     Health,
+    ChangePassword {
+        current_password: Zeroizing<String>,
+        password: Zeroizing<String>,
+        #[serde(default)]
+        rotate_key: bool,
+        new_recovery: Option<Zeroizing<String>>,
+    },
+    FileDigest {
+        destination: Option<PathBuf>,
+        expected_sha256: Option<String>,
+    },
     EnableEpoch {
         destination: PathBuf,
     },
@@ -99,6 +112,66 @@ impl Session {
     }
 
     fn handle(&mut self, request: Request) -> Result<Value, &'static str> {
+        if let Request::ChangePassword {
+            current_password,
+            password,
+            rotate_key,
+            new_recovery,
+        } = request
+        {
+            if !bool::from(self.password.as_bytes().ct_eq(current_password.as_bytes())) {
+                return Err("Das aktuelle Tresorpasswort stimmt nicht.");
+            }
+            if password.chars().count() < 15 {
+                return Err("Mindestens 15 Zeichen verwenden");
+            }
+            if bool::from(self.password.as_bytes().ct_eq(password.as_bytes())) {
+                return Err("Wähle ein anderes neues Tresorpasswort.");
+            }
+            if let Some(recovery) = &new_recovery {
+                check_recovery(recovery)?;
+            }
+            let _lock = lock_writer(&self.path)?;
+            let (revision, rotated) = container::change_password_with_revision(
+                &self.path,
+                self.password.as_bytes(),
+                password.as_bytes(),
+                rotate_key,
+                new_recovery.as_ref().map(|s| s.as_bytes()),
+                self.revision,
+            )?;
+            self.revision = revision;
+            self.password = password;
+            return Ok(json!({"password_changed":true, "key_rotated":rotated,
+                "new_recovery":new_recovery.is_some()}));
+        }
+        if let Request::FileDigest {
+            destination,
+            expected_sha256,
+        } = &request
+        {
+            if destination.is_some() && expected_sha256.is_none() {
+                return Err("Ermittle zuerst den Prüfwert der Datei.");
+            }
+            let (snapshot, revision) =
+                container::verified_snapshot(&self.path, self.password.as_bytes(), self.revision)?;
+            let digest = format!("{:x}", Sha256::digest(&snapshot));
+            if let Some(expected) = expected_sha256 {
+                if expected.len() != 64 || !expected.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    return Err("Ein SHA-256-Prüfwert mit 64 Hex-Zeichen wird erwartet.");
+                }
+                if !expected.eq_ignore_ascii_case(&digest) {
+                    return Err(
+                        "Die Datei wurde seit dem Abruf geändert. Ermittle den Prüfwert erneut.",
+                    );
+                }
+            }
+            if let Some(destination) = destination {
+                transfer::publish_new_file(destination, format!("{digest}\n").as_bytes())?;
+            }
+            self.revision = revision;
+            return Ok(json!({"sha256":digest,"bytes":snapshot.len()}));
+        }
         if matches!(request, Request::Health) {
             let (entries, metadata) = self.entries_with_metadata()?;
             let modified = std::fs::metadata(&self.path)
@@ -241,6 +314,8 @@ impl Session {
             | Request::Import { .. }
             | Request::InspectImport { .. }
             | Request::Health
+            | Request::ChangePassword { .. }
+            | Request::FileDigest { .. }
             | Request::Export { .. }
             | Request::EnableRecovery { .. }
             | Request::EnableEpoch { .. }

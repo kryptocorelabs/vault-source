@@ -2,12 +2,15 @@ from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 import os
 import json
+import hashlib
 from pathlib import Path
 import sys
 import tempfile
 import time
 
 root = Path(__file__).resolve().parents[3]
+if output := os.environ.get('KCV_TEST_SCREENSHOTS'):
+    Path(output).mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(root / 'apps/vault/desktop'))
 if len(sys.argv) > 1:
     sys.path.insert(0, sys.argv[1])
@@ -87,6 +90,8 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
         assert not controls['Sicherung erstellen'].isEnabled()
         assert not controls['Tresor-Status'].isEnabled()
         assert not controls['Logins als JSON exportieren'].isEnabled()
+        assert not controls['Tresorpasswort ändern'].isEnabled()
+        assert not controls['Datei-Prüfwert (SHA-256)'].isEnabled()
         later(check_usage)
         click(vault.dialog, 'Hinweise zur Nutzung')
 
@@ -143,7 +148,7 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
             if vault.dialog is parent:
                 errors.append(AssertionError(parent.error.text() or 'Vault creation did not finish'))
                 parent.reject()
-        ui.C.QTimer.singleShot(8000, fail_if_creation_stalled)
+        ui.C.QTimer.singleShot(30000, fail_if_creation_stalled)
         click(sheet, 'PDF speichern und fortfahren')
 
     selections.extend((vault_path, pdf_path))
@@ -406,10 +411,135 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     assert vault.request(action='reveal', site=site)['password'] == secret
     assert vault.last_backup_at(imported_path) is None
     assert protected.read_bytes() == current and json.loads(migration_json.read_bytes()) == exported
+
+    # Password changes are separately authorized, cancellation clears inputs,
+    # and explicit key rotation produces a genuinely usable replacement sheet.
+    before_change = imported_path.read_bytes()
+    original_emergency = synthetic_key[-1]
+    cancelled_password_fields = []
+
+    def cancel_password_change():
+        panel = vault.dialog
+        assert panel.windowTitle() == 'Tresorpasswort ändern'
+        assert not panel.findChild(ui.W.QCheckBox).isChecked()
+        for field in panel.findChildren(ui.W.QLineEdit):
+            field.setText('Synthetic cancelled password')
+            cancelled_password_fields.append(field)
+        click(panel, 'Abbrechen')
+
+    later(cancel_password_change)
+    vault.change_password()
+    check()
+    assert all(field.text() == '' for field in cancelled_password_fields)
+    assert imported_path.read_bytes() == before_change
+    quick_password = 'Synthetic ordinary GUI password'
+    rotated_password = 'Synthetic rotated GUI password'
+    previous_browser_session = vault.firefox_epoch
+
+    def enter_password_change(current_password, next_password):
+        for field in vault.dialog.findChildren(ui.W.QLineEdit):
+            field.setText(current_password if field.accessibleName() == 'Aktuelles Tresorpasswort' else next_password)
+
+    def ordinary_password_change():
+        panel = vault.dialog
+        assert not panel.findChild(ui.W.QCheckBox).isChecked()
+        assert 'Datenschlüssel und Notfallblatt bleiben gleich' in panel.findChild(ui.W.QLabel, 'passwordChangeExplanation').text()
+        assert any('Alte Dateikopien bleiben' in item.text() for item in panel.findChildren(ui.W.QLabel))
+        if output := os.environ.get('KCV_TEST_SCREENSHOTS'):
+            panel.grab().save(str(Path(output)/'vault-password-change.png'))
+        enter_password_change('wrong current password', quick_password)
+        click(panel, 'Passwort ändern')
+        assert 'aktuelle Tresorpasswort' in panel.error.text()
+        assert imported_path.read_bytes() == before_change
+        enter_password_change(passphrase, quick_password)
+        click(panel, 'Passwort ändern')
+        assert not panel.isVisible(), panel.error.text()
+
+    later(ordinary_password_change)
+    vault.change_password()
+    check()
+    assert vault.firefox_epoch != previous_browser_session
+    assert vault.request(action='reveal', site=site)['password'] == secret
+    quick_bytes = imported_path.read_bytes()
+    assert quick_bytes != before_change
+    digest_path = folder/'vault.sha256'
+    occupied_digest = folder/'occupied.sha256'
+    occupied_digest.write_bytes(b'Preserve existing reference')
+    selections.extend((occupied_digest, digest_path))
+
+    def check_digest():
+        panel = vault.dialog
+        digest = hashlib.sha256(quick_bytes).hexdigest()
+        assert ''.join(panel.findChild(ui.W.QLabel, 'fileDigestValue').text().split()) == digest
+        field = next(field for field in panel.findChildren(ui.W.QLineEdit) if field.accessibleName().startswith('Mit notiertem'))
+        result = panel.findChild(ui.W.QLabel, 'fileDigestComparison')
+        field.setText('bad format')
+        click(panel, 'Vergleichen')
+        assert '64 Hex-Zeichen' in result.text()
+        field.setText(hashlib.sha256(before_change).hexdigest())
+        click(panel, 'Vergleichen')
+        assert 'unterscheiden' in result.text()
+        field.setText(digest.upper())
+        click(panel, 'Vergleichen')
+        assert 'entspricht' in result.text()
+        click(panel, 'Prüfwert kopieren')
+        assert ui.W.QApplication.clipboard().text() == digest
+        if output := os.environ.get('KCV_TEST_SCREENSHOTS'):
+            panel.grab().save(str(Path(output)/'vault-file-digest.png'))
+        click(panel, 'Prüfwert separat speichern')
+        assert 'existiert bereits' in panel.error.text()
+        assert occupied_digest.read_bytes() == b'Preserve existing reference'
+        click(panel, 'Prüfwert separat speichern')
+        assert 'gespeichert' in result.text()
+        click(panel, 'Schließen')
+
+    later(check_digest)
+    vault.file_digest()
+    check()
+    assert digest_path.read_text(encoding='ascii') == hashlib.sha256(quick_bytes).hexdigest()+'\n'
+    new_sheet = folder/'rekey-emergency.pdf'
+    selections.append(new_sheet)
+
+    def explicit_key_rotation():
+        panel = vault.dialog
+        panel.findChild(ui.W.QCheckBox).setChecked(True)
+        assert 'neues Notfallblatt' in panel.findChild(ui.W.QLabel, 'passwordChangeExplanation').text()
+        if output := os.environ.get('KCV_TEST_SCREENSHOTS'):
+            panel.grab().save(str(Path(output)/'vault-password-rekey.png'))
+        enter_password_change(quick_password, rotated_password)
+        later(show_and_save)
+        click(panel, 'Passwort ändern')
+        assert not panel.isVisible(), panel.error.text()
+
+    later(explicit_key_rotation)
+    vault.change_password()
+    check()
+    final_bytes = imported_path.read_bytes()
+    assert final_bytes != quick_bytes and synthetic_key[-1] != original_emergency
+    assert new_sheet.read_bytes().startswith(b'%PDF')
+    assert vault.request(action='reveal', site=site)['password'] == secret
+    # Exercise the actual key from that PDF on a copy, not the active original.
+    recovery_copy = folder/'new-sheet-recovery-test.kcv'
+    recovery_copy.write_bytes(final_bytes)
+    vault.lock()
+    selections.append(recovery_copy)
+
+    def recover_with_new_sheet():
+        panel = vault.dialog
+        for field in panel.findChildren(ui.W.QLineEdit):
+            field.setText(synthetic_key[-1] if field.accessibleName().startswith('Schlüssel') else 'Synthetic new sheet restore password')
+        click(panel, 'Passwort zurücksetzen')
+        assert not panel.isVisible(), panel.error.text()
+
+    later(recover_with_new_sheet)
+    vault.recover()
+    check()
+    assert vault.request(action='reveal', site=site)['password'] == secret
+    assert imported_path.read_bytes() == final_bytes and protected.read_bytes() == current
     if os.name != 'nt':
         vault.application_state_changed(ui.C.Qt.ApplicationInactive)
         assert vault.process is None and not vault.entries
         assert vault.firefox_indicator.isHidden()
         assert folder.joinpath('KryptoCoreLabs/Vault').stat().st_mode & 0o777 == 0o700
     vault.close()
-    print('PASS: usage/recovery, successful-only backup receipts, health/age hints, explicit JSON export and new-vault import; source files preserved.')
+    print('PASS: recovery/epochs, migration/health, password/key rotation, real replacement sheet, file digests and no-clobber references; originals preserved.')

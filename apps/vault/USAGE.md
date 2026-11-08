@@ -42,6 +42,10 @@ copies remain readable with the password or emergency sheet that matched them.
 If someone may have read a copy, also change the stored account passwords at
 their services; changing the vault password cannot revoke exposed credentials.
 
+The new unlocked password-change dialog retains the KCV2/KCV3 seed and existing
+sheet by default. Its optional re-key mode generates a fresh seed and a replacement
+sheet. This is separate from resetting through a recovery credential below.
+
 The [unreleased recovery hardening](RECOVERY-HARDENING.md) also replaces the
 internal data key while retaining the current emergency sheet. Earlier builds
 kept that key when resetting the password. Keep a verified backup before trying
@@ -64,6 +68,13 @@ are preserved; protect the unencrypted JSON. See [the migration guide](MIGRATION
 recovery-slot availability, the last backup recorded here and the filesystem
 modification date. Unknown backup history stays unknown. A 180-day-old date
 prompts a check; this is not a security score or proof that a backup is readable.
+
+## Password changes and file fingerprints — development builds
+
+Development builds also offer **Settings → Change vault password** with an
+optional new key/new emergency-sheet step and **File fingerprint (SHA-256)**
+for recording/comparing encrypted file snapshots. Old copies remain readable
+with matching credentials. See [access and integrity](ACCESS-AND-INTEGRITY.md).
 
 ## Security reports and rights
 

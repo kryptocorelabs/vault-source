@@ -29,6 +29,8 @@ Local backup receipts and filesystem dates are informational, editable state.
 | A local attacker reads UI/process memory | Rust clears selected owned buffers; Python/Qt/JSON copies, swap and crash dumps may persist. Locking stops access through the app but cannot guarantee forensic erasure. |
 | A relay or website requests browser access | The v5 encrypted channel, paired secret, origin/tab/frame/session checks and lock invalidation enforce their documented scope. A compromised extension, app or OS is outside that scope. |
 | Credentials were already filled, exported or copied | Vault cannot retract plaintext or reset the corresponding website accounts. The user must rotate affected service credentials. |
+| A normal password change is made without re-keying | For KCV2/KCV3 only password wrapping changes; the seed and recovery access remain. An old extracted seed still works against current payloads. Explicit re-keying replaces the seed and, in the GUI, recovery credential; it cannot revoke old copies. |
+| An attacker replaces a file and its recorded hash | SHA-256 comparison needs a separately trusted baseline. It is not sender authentication, a signature or malware detection. |
 | An export is stolen or imported from an untrusted sender | JSON has no encryption or origin authentication. It exposes every transferred login. A fresh vault seed protects future ciphertext, not this plaintext or the sender's claims. |
 
 ## Persistence and recovery

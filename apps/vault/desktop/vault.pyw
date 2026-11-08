@@ -63,6 +63,7 @@ QLabel#heading { font-size: 28px; font-weight: 650; }
 QLabel#section, QLabel[healthValue="true"] { font-size: 21px; font-weight: 650; }
 QLabel#muted { color: #99aebb; }
 QLabel#error { color: #ffbaa6; }
+QLabel#fileDigestValue { color: #80e5cf; font: 13px "Consolas"; }
 QPushButton { background: #20343f; border: 1px solid #30454e; border-radius: 12px; padding: 9px 12px; }
 QPushButton:hover { background: #2a414a; }
 QPushButton:focus, QLineEdit:focus { border: 1px solid #80e5cf; }
@@ -583,6 +584,12 @@ class Vault(W.QWidget):
         backup_action.setEnabled(self.process is not None)
         dialog.layout.addWidget(backup_action)
         dialog.layout.addWidget(recovery_action)
+        password_action = button('Tresorpasswort ändern', lambda: dialog.done(10))
+        password_action.setEnabled(self.process is not None)
+        dialog.layout.addWidget(password_action)
+        digest_action = button('Datei-Prüfwert (SHA-256)', lambda: dialog.done(11))
+        digest_action.setEnabled(self.process is not None)
+        dialog.layout.addWidget(digest_action)
         health_action = button('Tresor-Status', lambda: dialog.done(7))
         health_action.setEnabled(self.process is not None)
         dialog.layout.addWidget(health_action)
@@ -637,6 +644,162 @@ class Vault(W.QWidget):
             self.export_json()
         elif result == 9:
             self.import_json()
+        elif result == 10 and self.process is not None:
+            self.change_password()
+        elif result == 11 and self.process is not None:
+            self.file_digest()
+
+    def change_password(self):
+        try:
+            info = self.request(action='health')
+        except VaultError as error:
+            self.status.setText(str(error))
+            return
+        epoch = self.firefox_epoch
+        dialog = Panel(self, 'Tresorpasswort ändern', Path(self.active_vault_path).name)
+        current = dialog.secret('Aktuelles Tresorpasswort')
+        password = dialog.secret('Neues Tresorpasswort')
+        feedback = label('Mindestens 15 Zeichen. Eine lange Passphrase ist möglich.', 'muted')
+        feedback.setWordWrap(True)
+        dialog.layout.addWidget(feedback)
+        timer = C.QTimer(dialog, interval=180, singleShot=True)
+
+        def estimate():
+            value = password.text()
+            if len(value) < 15:
+                text = 'Mindestens 15 Zeichen. Eine lange Passphrase ist möglich.'
+            elif zxcvbn is None or len(value) > 72:
+                text = 'Mindestlänge erreicht · Stärkeschätzung nicht verfügbar.'
+            else:
+                score = zxcvbn(value, user_inputs=['kryptocore', 'vault'])['score']
+                text = 'Stärkeschätzung: ' + ['sehr schwach', 'schwach', 'mittel', 'gut', 'stark'][score]
+            feedback.setText(text)
+
+        timer.timeout.connect(estimate)
+        password.textChanged.connect(lambda: timer.start())
+        confirm = dialog.secret('Neues Tresorpasswort bestätigen')
+        rotate = W.QCheckBox('Neuen Tresorschlüssel erzeugen')
+        rotate.setAccessibleName('Neuen Tresorschlüssel erzeugen')
+        legacy = info['format_version'] == 1
+        rotate.setChecked(legacy)
+        rotate.setEnabled(not legacy)
+        dialog.layout.addWidget(rotate)
+        explanation = label('', 'muted')
+        explanation.setWordWrap(True)
+        explanation.setObjectName('passwordChangeExplanation')
+        dialog.layout.addWidget(explanation)
+        pending_recovery = None
+
+        def explain():
+            nonlocal pending_recovery
+            pending_recovery = None
+            if legacy:
+                text = 'Bei diesem älteren Format wird der Datenschlüssel beim Passwortwechsel immer neu abgeleitet. Ein Notfallblatt wird hier nicht eingerichtet.'
+            elif rotate.isChecked():
+                text = 'Die aktuelle Datei erhält einen neuen Datenschlüssel und ein neues Notfallblatt. Das bisherige Blatt gilt danach nur noch für alte Kopien.'
+            else:
+                text = 'Nur das Passwort ändert sich. Datenschlüssel und Notfallblatt bleiben gleich. Ein aus einer alten Kopie gewonnener Datenschlüssel öffnet auch die aktuelle Datei.'
+            explanation.setText(text)
+
+        rotate.toggled.connect(explain)
+        explain()
+        warning = label('Alte Dateikopien bleiben mit dem damaligen Passwort oder Notfallblatt lesbar – auch nach einem Schlüsselwechsel. Erstelle danach eine neue Sicherung.', 'muted')
+        warning.setWordWrap(True)
+        dialog.layout.addWidget(warning)
+
+        def save():
+            nonlocal pending_recovery
+            if self.process is None or self.firefox_epoch != epoch:
+                dialog.reject()
+                return
+            if not current.text() or len(password.text()) < 15 or password.text() != confirm.text():
+                dialog.error.setText('Gib das aktuelle Passwort ein und bestätige mindestens 15 Zeichen für das neue Passwort.')
+                return
+            try:
+                if rotate.isChecked() and not legacy and pending_recovery is None:
+                    pending_recovery = self.show_new_recovery_sheet(dialog, self.vault_name.text(), pending_change=True)
+                    if pending_recovery is None or self.firefox_epoch != epoch:
+                        return
+                reply = self.request(action='change_password', current_password=current.text(), password=password.text(),
+                                     rotate_key=rotate.isChecked(), new_recovery=pending_recovery)
+            except VaultError as error:
+                dialog.error.setText(str(error))
+                return
+            self.firefox_epoch = secrets.token_hex(16)
+            self.cancel_firefox_requests()
+            self.hide_detail_password()
+            dialog.accept()
+            self.status.setText('Passwort und Datenschlüssel erneuert.' if reply['key_rotated'] else 'Passwort geändert · Datenschlüssel und Notfallblatt unverändert.')
+
+        dialog.finish('Passwort ändern', save)
+        dialog.finished.connect(lambda _: [field.clear() for field in (current, password, confirm)])
+        current.setFocus()
+        self.show_panel(dialog)
+        timer.stop()
+        pending_recovery = None
+        dialog.deleteLater()
+
+    def file_digest(self):
+        try:
+            snapshot = self.request(action='file_digest')
+        except VaultError as error:
+            self.status.setText(str(error))
+            return
+        epoch = self.firefox_epoch
+        digest = snapshot['sha256']
+        dialog = Panel(self, 'Datei-Prüfwert', Path(self.active_vault_path).name)
+        dialog.layout.addWidget(label('SHA-256 · VERSCHLÜSSELTE DATEI', 'eyebrow'))
+        value = label(digest[:32] + '\n' + digest[32:], 'recoveryCode')
+        value.setObjectName('fileDigestValue')
+        value.setTextInteractionFlags(C.Qt.TextSelectableByMouse | C.Qt.TextSelectableByKeyboard)
+        value.setAccessibleName('SHA-256 der verschlüsselten Tresordatei')
+        dialog.layout.addWidget(value)
+        copy = button('Prüfwert kopieren', lambda: W.QApplication.clipboard().setText(digest))
+        dialog.layout.addWidget(copy)
+        note = label('Momentaufnahme beim Abruf. Jeder Speichervorgang kann den Wert ändern. '
+                     'Bewahre die Referenz getrennt auf. Ein passender Prüfwert ist kein Herkunftsnachweis und kein Virenschutz.', 'muted')
+        note.setWordWrap(True)
+        dialog.layout.addWidget(note)
+        expected = dialog.field('Mit notiertem SHA-256 vergleichen')
+        expected.setPlaceholderText('64 Hex-Zeichen')
+        expected.setMaxLength(128)
+        dialog.layout.addWidget(expected)
+        comparison = label('', 'muted')
+        comparison.setObjectName('fileDigestComparison')
+        comparison.setWordWrap(True)
+
+        def compare():
+            reference = ''.join(expected.text().split()).lower()
+            if re.fullmatch(r'[0-9a-f]{64}', reference) is None:
+                comparison.setText('Gib einen SHA-256-Prüfwert mit 64 Hex-Zeichen ein.')
+            elif hmac.compare_digest(reference, digest):
+                comparison.setText('Die Momentaufnahme entspricht diesem Prüfwert.')
+            else:
+                comparison.setText('Prüfwerte unterscheiden sich. Die Datei wurde geändert oder die Referenz gehört zu einer anderen Datei.')
+
+        dialog.layout.addWidget(button('Vergleichen', compare))
+        dialog.layout.addWidget(comparison)
+
+        def save():
+            path, _ = W.QFileDialog.getSaveFileName(dialog, 'Prüfwert separat speichern',
+                self.vault_name.text() + '.sha256', 'SHA-256 (*.sha256)', options=W.QFileDialog.DontConfirmOverwrite)
+            if not path or self.firefox_epoch != epoch:
+                return
+            if not path.lower().endswith('.sha256'):
+                path += '.sha256'
+            try:
+                self.request(action='file_digest', destination=path, expected_sha256=digest)
+            except VaultError as error:
+                dialog.error.setText(str(error))
+                return
+            dialog.error.clear()
+            comparison.setText('Prüfwert gespeichert. Bewahre die Referenz getrennt von der Tresordatei auf.')
+
+        dialog.layout.addWidget(button('Prüfwert separat speichern', save))
+        dialog.layout.addWidget(dialog.error)
+        dialog.layout.addWidget(button('Schließen', dialog.accept))
+        self.show_panel(dialog)
+        dialog.deleteLater()
 
     def backup_record_key(self, path):
         return 'backups/' + vault_epochs.path_key(path) + '/completed_unix'
@@ -697,11 +860,14 @@ class Vault(W.QWidget):
         detail.setWordWrap(True)
         dialog.layout.addWidget(detail)
         dialog.layout.addWidget(button('Sicherung erstellen', lambda: dialog.done(2)))
+        dialog.layout.addWidget(button('Datei-Prüfwert (SHA-256)', lambda: dialog.done(3)))
         dialog.layout.addWidget(button('Schließen', dialog.accept))
         result = self.show_panel(dialog)
         dialog.deleteLater()
         if result == 2 and self.process is not None:
             self.backup()
+        elif result == 3 and self.process is not None:
+            self.file_digest()
 
     def export_json(self):
         dialog = Panel(self, 'JSON-Export',
@@ -830,7 +996,8 @@ class Vault(W.QWidget):
         dialog = Panel(self, 'Sicherung erstellen',
                        'Speichere die verschlüsselte Kopie möglichst auf einem anderen Datenträger. '
                        'Teste den Zugang später an einer zusätzlichen Kopie. '
-                       'Diese Sicherung behält ihr jetziges Passwort und Notfallblatt, auch wenn du sie später im aktiven Tresor änderst.')
+                       'Diese Sicherung behält ihr jetziges Passwort und Notfallblatt, auch wenn du sie später im aktiven Tresor änderst. '
+                       'Alte Dateikopien bleiben mit dem damaligen Passwort lesbar.')
 
         def save_backup():
             stamp = time.strftime('%Y-%m-%d-%H%M%S')
@@ -1395,7 +1562,7 @@ class Vault(W.QWidget):
                 self.status.setText(f'{len(self.entries)} Logins importiert · JSON bleibt unverschlüsselt.')
         dialog.deleteLater()
 
-    def show_new_recovery_sheet(self, parent, vault_name):
+    def show_new_recovery_sheet(self, parent, vault_name, *, pending_change=False):
         recovery = secrets.token_hex(32)
         dialog = Panel(parent, 'Dein Notfallblatt',
                        'Mit diesem Blatt und deiner Tresordatei kannst du ein neues Tresorpasswort setzen.')
@@ -1405,6 +1572,10 @@ class Vault(W.QWidget):
         )
         warning.setWordWrap(True)
         dialog.layout.addWidget(warning)
+        if pending_change:
+            pending = label('Dieses neue Blatt gilt erst nach erfolgreich gespeichertem Passwortwechsel. Bis dahin bleibt der bisherige Zugang gültig.', 'muted')
+            pending.setWordWrap(True)
+            dialog.layout.addWidget(pending)
         preview = label('', 'recoveryCode')
         preview.setAlignment(C.Qt.AlignCenter)
         preview.hide()
@@ -1452,7 +1623,10 @@ class Vault(W.QWidget):
         return True
 
     def enable_recovery(self):
-        dialog = Panel(self, 'Notfallblatt', 'Speichere das Blatt getrennt vom Tresor. Nach dem Erneuern gilt das neue Blatt für die aktuelle Tresordatei. Alte Kopien können noch mit dem alten Schlüssel geöffnet werden.')
+        dialog = Panel(self, 'Notfallblatt',
+                       'Beim Einrichten oder Erneuern wird auch der interne Datenschlüssel erneuert. '
+                       'Das neue Blatt gilt für die aktuelle Tresordatei; speichere es getrennt und geschützt. '
+                       'Alte Dateikopien bleiben mit ihrem damaligen Passwort oder Notfallblatt lesbar.')
 
         def save_sheet():
             try:

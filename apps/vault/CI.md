@@ -35,6 +35,16 @@ fresh seeds and reject old-seed decryption of a newly created payload. Qt tests
 exercise the import/password/emergency-sheet flow, cancellation, explicit
 plaintext confirmation and successful-only per-path backup timestamps.
 
+Password-change tests prove both boundaries directly: quick wrapping retains the
+seed (an extracted old key still works), while explicit re-keying replaces it and
+rejects the old key. They cover KCV1 compatibility, KCV3 floors/overflow and intact
+files on error. Real-worker tests read changed files with the pinned older Rescue,
+check old/new recovery paths and retained old copies, and compare SHA-256 against
+Python hashlib. Receipt tests cover stale expected digests, occupied destinations,
+malformed references and linked folders. Qt tests exercise both password modes,
+cancelled/wrong credentials, clearing inputs, the actual replacement PDF credential,
+digest copy/compare/save and no-clobber output. Screenshots use synthetic data.
+
 The Windows build job runs after those checks pass. It builds the native
 backend, helper, and channel DLL with the lockfile, then compares the contents
 of two Firefox ZIPs from clean build directories. The comparison includes the

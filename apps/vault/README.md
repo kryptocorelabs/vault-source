@@ -33,6 +33,10 @@ Development builds also provide [JSON migration and Vault status](MIGRATION.md):
 export deliberately, create a new vault with fresh key material, and review
 entries, recovery availability, local backup receipts and filesystem age.
 
+See [password changes and file fingerprints](ACCESS-AND-INTEGRITY.md) for the
+optional re-key/new-sheet flow, old-copy limits and separately stored SHA-256
+references. A checksum is not a signature or a malware scan.
+
 ## End-user builds and development
 
 The [single-file Windows build](WINDOWS-ONEFILE.md) bundles Python, Qt and the

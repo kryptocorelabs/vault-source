@@ -119,20 +119,6 @@ pub fn export(destination: &Path, entries: &[Login], confirmed: bool) -> Result<
     if !confirmed {
         return Err("Bestätige zuerst den unverschlüsselten Export.");
     }
-    let parent = destination
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    for ancestor in parent.ancestors().filter(|p| !p.as_os_str().is_empty()) {
-        let metadata =
-            fs::symlink_metadata(ancestor).map_err(|_| "Exportordner nicht verfügbar.")?;
-        if !metadata.is_dir() || is_link(&metadata) {
-            return Err("Wähle einen geschützten Exportordner ohne Verknüpfungen.");
-        }
-    }
-    if destination.file_name().is_none() || fs::symlink_metadata(destination).is_ok() {
-        return Err("Datei existiert bereits. Wähle einen neuen Namen.");
-    }
     let data = Zeroizing::new(
         serde_json::to_vec_pretty(&ExportFile {
             format: FORMAT,
@@ -144,14 +130,32 @@ pub fn export(destination: &Path, entries: &[Login], confirmed: bool) -> Result<
     if data.len() > MAX_EXPORT {
         return Err("JSON-Export überschreitet das Limit von 16 MiB.");
     }
+    publish_new_file(destination, &data)
+}
+
+/// Explicit local outputs only; never overwrite or follow linked output ancestors.
+pub fn publish_new_file(destination: &Path, data: &[u8]) -> Result<(), &'static str> {
+    let parent = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    for ancestor in parent.ancestors().filter(|p| !p.as_os_str().is_empty()) {
+        let metadata = fs::symlink_metadata(ancestor).map_err(|_| "Zielordner nicht verfügbar.")?;
+        if !metadata.is_dir() || is_link(&metadata) {
+            return Err("Wähle einen geschützten Zielordner ohne Verknüpfungen.");
+        }
+    }
+    if destination.file_name().is_none() || fs::symlink_metadata(destination).is_ok() {
+        return Err("Datei existiert bereits. Wähle einen neuen Namen.");
+    }
     let mut temporary = tempfile::NamedTempFile::new_in(parent)
-        .map_err(|_| "Export konnte nicht angelegt werden.")?;
+        .map_err(|_| "Zieldatei konnte nicht angelegt werden.")?;
     temporary
-        .write_all(&data)
+        .write_all(data)
         .and_then(|_| temporary.as_file().sync_all())
-        .map_err(|_| "Export konnte nicht gespeichert werden.")?;
+        .map_err(|_| "Zieldatei konnte nicht gespeichert werden.")?;
     temporary
         .persist_noclobber(destination)
-        .map_err(|_| "Export konnte nicht übernommen werden. Wähle einen neuen Namen.")?;
+        .map_err(|_| "Zieldatei konnte nicht übernommen werden. Wähle einen neuen Namen.")?;
     Ok(())
 }
