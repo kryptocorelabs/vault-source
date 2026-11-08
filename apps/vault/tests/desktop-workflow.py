@@ -42,7 +42,10 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
 
     class TestVault(ui.Vault):
         def setup_firefox(self):
-            self.update_firefox_status()
+            if os.name == 'nt':
+                self.update_firefox_status()
+            else:
+                super().setup_firefox()
 
     vault = TestVault()
     vault.show()

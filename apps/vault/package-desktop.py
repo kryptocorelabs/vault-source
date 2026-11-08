@@ -80,7 +80,7 @@ elif system == 'linux':
     with tarfile.open(archive, 'w:gz') as package:
         package.add(stage, arcname='KryptoCore-Vault')
 else:
-    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
+    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, strict_timestamps=False) as package:
         for file in stage.rglob('*'):
             if file.is_file():
                 package.write(file, 'KryptoCore-Vault/' + file.relative_to(stage).as_posix())
