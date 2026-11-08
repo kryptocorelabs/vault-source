@@ -15,6 +15,8 @@ beschreiben die Bestandteile der Desktop- und Firefox-Pakete.
 
 ## Tresor ausprobieren
 
+Für einen lokalen Windows-Test gibt es eine [Einzeldatei-Vorschau](WINDOWS-ONEFILE.md).
+
 Unter Windows kannst du [Vault öffnen](desktop/vault.pyw), wenn Python, Qt für
 Python und das gebaute Rust-Backend vorhanden sind. Installiere die Abhängigkeiten
 mit `python -m pip install -r apps/vault/desktop/requirements.txt`. Im Projektordner
@@ -147,3 +149,11 @@ setzen. Bei einem entsperrten Tresor kannst du das Blatt unter
 ihre alten Zugänge. Frühere Vault-Versionen unterstützen `KCV2` nicht.
 
 YubiKey und Passwort-Sperrliste folgen separat.
+
+
+## Browser support and appearance
+
+The development interface shares the Messenger palette and rounded surfaces.
+Vault retains its compact start tiles and uses scrollable settings/recovery
+dialogs. Firefox 0.1.16 includes the matching popup design. Existing releases
+remain unchanged. See [browser support and the Chrome/Edge plan](BROWSERS.md).

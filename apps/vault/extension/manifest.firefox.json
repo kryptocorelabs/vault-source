@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "KryptoCore Vault Preview",
   "description": "Find, fill and save sign-ins using the local KryptoCore Vault desktop app for Windows.",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; upgrade-insecure-requests;"
   },

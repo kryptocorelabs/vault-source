@@ -17,14 +17,14 @@
       box-sizing: border-box; display: flex; align-items: center; gap: 8px;
       max-width: calc(100vw - 32px); min-height: 36px; padding: 6px 12px;
       font: 600 13px/1.35 system-ui, sans-serif; cursor: pointer; text-align: left;
-      border: 1px solid #6173a2; border-radius: 11px; color: #e9f3fb;
-      background: #192738; box-shadow: 0 3px 15px #07101966;
+      border: 1px solid #30454e; border-radius: 11px; color: #e4edf3;
+      background: #1b2832; box-shadow: 0 3px 15px #07101966;
     }
     button[data-state=found] { border-color: #71c5b3; color: #b6f5e6; background: #193b3b; }
     button[data-state=offer], button[data-state=missing] {
       border-color: #e5b571; color: #ffe3b9; background: #3c3027;
     }
-    button:focus-visible { outline: 2px solid #8de7d4; outline-offset: 2px; }
+    button:focus-visible { outline: 2px solid #80e5cf; outline-offset: 2px; }
     svg { flex: none; width: 18px; height: 18px; }
   `;
   const button = document.createElement('button');

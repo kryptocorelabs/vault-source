@@ -3,6 +3,7 @@
 from html import escape
 import ctypes
 from ctypes import wintypes
+from hashlib import sha256
 import hmac
 import json
 import os
@@ -18,7 +19,7 @@ from PySide6 import QtCore as C, QtGui as G, QtNetwork as N, QtWidgets as W
 from firefox_channel import Channel, ChannelError, ChannelLibrary
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
+ROOT = None if getattr(sys, 'frozen', False) else HERE.parents[2]
 VAULT_IDLE_SECONDS = {'standard': 300, 'strict': 60}
 FIREFOX_PIPE = 'kryptocorelabs-vault-firefox-v5'
 FIREFOX_PAIR_SECONDS = 120
@@ -31,84 +32,89 @@ WM_WTSSESSION_CHANGE = 0x02B1
 WM_POWERBROADCAST = 0x0218
 SESSION_END_EVENTS = (0x2, 0x4, 0x6, 0x7)  # Console disconnect, remote disconnect, logoff, lock.
 SUSPEND_EVENTS = (0x4, 0x12)  # Suspend and automatic resume.
-local_deps = ROOT / 'dist/desktop-deps'
-if local_deps.is_dir():
-    sys.path.append(str(local_deps))
+if ROOT is not None:
+    local_deps = ROOT / 'dist/desktop-deps'
+    if local_deps.is_dir():
+        sys.path.append(str(local_deps))
 try:
     from zxcvbn import zxcvbn
 except ImportError:
     zxcvbn = None
 
 STYLE = '''
-QWidget { color: #e5eef5; font: 13px "Segoe UI"; }
+QWidget { color: #e4edf3; font: 13px "Segoe UI"; }
 QFrame#shell, QDialog#panel, QWidget#panelBody {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #172736, stop:.55 #121d2a, stop:1 #101822);
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #14212b, stop:.55 #101923, stop:1 #101923);
 }
-QFrame#shell { border: 1px solid #304354; border-radius: 18px; }
+QFrame#shell { border: 1px solid #30454e; border-radius: 18px; }
 QFrame#shell[glass="true"] {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 rgba(23, 39, 54, 239), stop:.55 rgba(18, 29, 42, 246), stop:1 rgba(16, 24, 34, 249));
+        stop:0 rgba(20, 33, 43, 245), stop:.55 rgba(16, 25, 35, 248), stop:1 rgba(16, 25, 35, 250));
 }
-QDialog#panel { border: 1px solid #304354; }
-QFrame#titlebar { background: #172533; border-top-left-radius: 17px; border-top-right-radius: 17px; }
+QDialog#panel { border: 1px solid #30454e; }
+QFrame#titlebar { background: #14212b; border-top-left-radius: 17px; border-top-right-radius: 17px; }
 QFrame#card, QFrame#details {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #1c2b39, stop:1 #17222f);
-    border: 1px solid #314556; border-radius: 15px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #1b2832, stop:1 #1b2832);
+    border: 1px solid #30454e; border-radius: 20px;
 }
-QLabel#eyebrow { color: #81e8d3; font-size: 11px; font-weight: 650; }
+QLabel#eyebrow { color: #80e5cf; font-size: 11px; font-weight: 650; }
 QLabel#heading { font-size: 28px; font-weight: 650; }
 QLabel#section { font-size: 21px; font-weight: 650; }
-QLabel#muted { color: #a9bdcc; }
-QLabel#error { color: #ff9ea8; }
-QPushButton { background: #1e2c38; border: 1px solid #324552; border-radius: 8px; padding: 7px 11px; }
-QPushButton:hover { background: #293c48; }
-QPushButton:focus, QLineEdit:focus { border: 1px solid #81e8d3; }
-QPushButton:disabled { color: #92a6b4; background: #192530; }
-QPushButton#primary { background: #203b3d; color: #a4f4e1; border-color: #38665f; font-weight: 650; }
-QPushButton#primary:hover { background: #2b4f4e; }
+QLabel#muted { color: #99aebb; }
+QLabel#error { color: #ffbaa6; }
+QPushButton { background: #20343f; border: 1px solid #30454e; border-radius: 12px; padding: 9px 12px; }
+QPushButton:hover { background: #2a414a; }
+QPushButton:focus, QLineEdit:focus { border: 1px solid #80e5cf; }
+QPushButton:disabled { color: #99aebb; background: #18252e; }
+QPushButton#primary { background: #284b4d; color: #80e5cf; border-color: #426b66; font-weight: 650; }
+QPushButton#primary:hover { background: #305956; }
 QPushButton#chrome { background: transparent; border-color: transparent; padding: 2px 8px; }
-QPushButton#chrome:hover, QPushButton#chrome:focus { background: #273946; border-color: #3b5966; }
-QFrame#welcomeRule { background: #293b4a; max-height: 1px; }
-QLabel#welcomeTitle { font-size: 34px; font-weight: 650; color: #f3f8fc; }
-QLabel#welcomeIntro { color: #b4c7d6; font-size: 14px; }
-QLabel#welcomeMark { background: #101a27; border: 1px solid #304355; border-radius: 18px; }
-QLabel#tileTitle { color: #f1f7fb; font-size: 15px; font-weight: 650; }
-QLabel#tileDetail { color: #abc2d2; font-size: 12px; }
-QLabel#tileIcon { background: #25394a; color: #b9dbef; border-radius: 9px; font-size: 19px; font-weight: 650; }
-QLabel#tileIconPrimary { background: #315957; color: #baf6e7; border-radius: 9px; font-size: 19px; font-weight: 650; }
-QLabel#tileArrow { color: #a9c9d7; font-size: 22px; }
-QLabel#previewBadge { background: #202d3b; color: #a9c0d0; border-radius: 7px; padding: 4px 8px; font-size: 11px; }
-QPushButton#startTile, QPushButton#startTilePrimary { border-radius: 15px; padding: 0; }
-QPushButton#startTile { background: #1a2937; border: 1px solid #324658; }
-QPushButton#startTile:hover { background: #23384a; border-color: #4b677b; }
+QPushButton#chrome:hover, QPushButton#chrome:focus { background: #20343f; border-color: #80e5cf; }
+QFrame#welcomeRule { background: #30454e; max-height: 1px; }
+QLabel#welcomeTitle { font-size: 34px; font-weight: 650; color: #e4edf3; }
+QLabel#welcomeIntro { color: #99aebb; font-size: 14px; }
+QLabel#welcomeMark { background: #13212b; border: 1px solid #30454e; border-radius: 18px; }
+QLabel#tileTitle { color: #e4edf3; font-size: 15px; font-weight: 650; }
+QLabel#tileDetail { color: #99aebb; font-size: 12px; }
+QLabel#tileIcon { background: #21323d; color: #b6d7dc; border-radius: 9px; font-size: 19px; font-weight: 650; }
+QLabel#tileIconPrimary { background: #284b4d; color: #80e5cf; border-radius: 9px; font-size: 19px; font-weight: 650; }
+QLabel#tileArrow { color: #99aebb; font-size: 22px; }
+QLabel#previewBadge { background: #1b2832; color: #99aebb; border-radius: 7px; padding: 4px 8px; font-size: 11px; }
+QPushButton#startTile, QPushButton#startTilePrimary { border-radius: 20px; padding: 0; }
+QPushButton#startTile { background: #1b2832; border: 1px solid #30454e; }
+QPushButton#startTile:hover { background: #21323d; border-color: #80c8ba; }
 QPushButton#startTilePrimary {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #234947, stop:1 #20323e);
-    border: 1px solid #487971;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #284b4d, stop:1 #1b2832);
+    border: 1px solid #426b66;
 }
-QPushButton#startTilePrimary:hover { background: #305652; border-color: #70a99c; }
-QPushButton#startTile:focus, QPushButton#startTilePrimary:focus { border: 2px solid #82e7d0; }
-QPushButton#firefoxBadge { background: #1e2d39; border-color: #2e4352; border-radius: 9px; padding: 3px 8px; }
-QPushButton#firefoxBadge[active="true"] { color: #a4f4e1; background: #213c3d; border-color: #38665f; }
-QPushButton#firefoxBadge:hover, QPushButton#firefoxBadge:focus { border-color: #81e8d3; }
-QLabel#pairCode { background: #0f1924; color: #a4f4e1; border: 1px solid #385451;
+QPushButton#startTilePrimary:hover { background: #305956; border-color: #80c8ba; }
+QPushButton#startTile:focus, QPushButton#startTilePrimary:focus { border: 2px solid #80e5cf; }
+QPushButton#firefoxBadge { background: #20343f; border-color: #30454e; border-radius: 9px; padding: 3px 8px; }
+QPushButton#firefoxBadge[active="true"] { color: #80e5cf; background: #284b4d; border-color: #426b66; }
+QPushButton#firefoxBadge:hover, QPushButton#firefoxBadge:focus { border-color: #80e5cf; }
+QLabel#pairCode { background: #13212b; color: #80e5cf; border: 1px solid #426b66;
     border-radius: 11px; padding: 12px; font: 21px "Consolas"; }
-QLabel#recoveryCode { background: #0f1924; color: #a4f4e1; border: 1px solid #385451;
+QLabel#recoveryCode { background: #13212b; color: #80e5cf; border: 1px solid #426b66;
     border-radius: 11px; padding: 12px; font: 14px "Consolas"; }
-QLineEdit, QComboBox { background: #111b26; border: 1px solid #344652; border-radius: 9px; padding: 7px; selection-background-color: #31545e; }
-QComboBox:focus { border-color: #81e8d3; }
+QLineEdit, QComboBox { background: #13212b; border: 1px solid #30454e; border-radius: 12px; padding: 9px 12px; selection-background-color: #416f73; }
+QComboBox:focus { border-color: #80e5cf; }
 QListWidget { background: transparent; border: 1px solid transparent; border-radius: 10px; outline: 0; }
-QListWidget:focus { border-color: #588d88; }
-QListWidget::item { background: #16222f; border: 1px solid #304455; padding: 9px 12px; border-radius: 9px; }
-QListWidget::item:hover { background: #243646; border-color: #496477; }
-QListWidget::item:selected { background: #294348; border-color: #4d7d79; color: #f3fcfa; }
-QScrollBar:vertical { background: #16212c; width: 8px; border-radius: 4px; margin: 1px 0; }
-QScrollBar::handle:vertical { background: #527083; border-radius: 4px; min-height: 20px; }
-QScrollBar::handle:vertical:hover { background: #73a395; }
+QListWidget:focus { border-color: #80e5cf; }
+QListWidget::item { background: #1b2832; border: 1px solid #30454e; padding: 9px 12px; border-radius: 9px; }
+QListWidget::item:hover { background: #21323d; border-color: #80c8ba; }
+QListWidget::item:selected { background: #213e43; border-color: #426b66; color: #e4edf3; }
+QScrollBar:vertical { background: #14212b; width: 8px; border-radius: 4px; margin: 1px 0; }
+QScrollBar::handle:vertical { background: #30454e; border-radius: 4px; min-height: 20px; }
+QScrollBar::handle:vertical:hover { background: #80c8ba; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
 QCheckBox { spacing: 8px; padding: 4px 0; }
-QProgressBar { background: #2c3c48; border: 0; border-radius: 3px; height: 6px; }
-QProgressBar::chunk { background: #81e8d3; border-radius: 3px; }
+QProgressBar { background: #30454e; border: 0; border-radius: 3px; height: 6px; }
+QProgressBar::chunk { background: #80e5cf; border-radius: 3px; }
+QScrollArea { background: transparent; border: 0; }
+QScrollArea > QWidget > QWidget { background: transparent; }
+QComboBox QAbstractItemView { background: #1b2832; color: #e4edf3; border: 1px solid #30454e; selection-background-color: #213e43; }
+QLabel#brandCaption { color: #99aebb; font-size: 10px; }
 '''
 
 
@@ -118,7 +124,10 @@ class VaultError(Exception):
 
 def backend(program='kryptocore-vault'):
     name = program + ('.exe' if os.name == 'nt' else '')
-    for directory in (HERE, ROOT / 'target/release', ROOT / 'target/x86_64-pc-windows-msvc/release'):
+    directories = (HERE,)
+    if ROOT is not None:
+        directories += (ROOT / 'target/release', ROOT / 'target/x86_64-pc-windows-msvc/release')
+    for directory in directories:
         path = directory / name
         if path.is_file():
             return path
@@ -157,6 +166,27 @@ def write_local_file(path, data):
     output = C.QSaveFile(str(path))
     if not output.open(C.QIODevice.WriteOnly) or output.write(data) != len(data) or not output.commit():
         raise VaultError(output.errorString())
+
+
+def firefox_manifest(settings_folder):
+    host = backend('vault-firefox-host')
+    folder = HERE
+    if ROOT is None:
+        # Firefox must be able to launch its native host after the bundle exits.
+        payload = host.read_bytes()
+        folder = settings_folder / 'native-host' / sha256(payload).hexdigest()
+        folder.mkdir(parents=True, exist_ok=True)
+        host = folder / host.name
+        if not host.is_file() or host.read_bytes() != payload:
+            write_local_file(host, payload)
+    manifest = folder / f'{FIREFOX_HOST}.json'
+    data = json.dumps({
+        'name': FIREFOX_HOST, 'description': 'KryptoCore Vault local connection',
+        'path': str(host), 'type': 'stdio', 'allowed_extensions': [FIREFOX_ID],
+    }).encode('utf-8')
+    if not manifest.is_file() or manifest.read_bytes() != data:
+        write_local_file(manifest, data)
+    return manifest
 
 
 def label(text, style=''):
@@ -201,6 +231,8 @@ class StartTile(W.QPushButton):
         self.setMinimumHeight(86 if primary else 121)
         self.clicked.connect(action)
         icon = label(symbol, 'tileIconPrimary' if primary else 'tileIcon')
+        if symbol == '\ue777':
+            icon.setFont(G.QFont('Segoe MDL2 Assets'))
         icon.setAlignment(C.Qt.AlignCenter)
         icon.setFixedSize(34, 34)
         self.title = label(title, 'tileTitle')
@@ -287,21 +319,30 @@ class TitleBar(W.QFrame):
         self.window = window
         self.setObjectName('titlebar')
         layout = W.QHBoxLayout(self)
-        layout.setContentsMargins(15, 7, 9, 7)
-        layout.addWidget(label('◉  VAULT', 'eyebrow'))
+        layout.setContentsMargins(12, 6, 8, 6)
+        layout.setSpacing(4)
+        mark = label('')
+        mark.setPixmap(G.QPixmap(str(HERE / 'vault-emblem.png')).scaled(22, 22, C.Qt.KeepAspectRatio, C.Qt.SmoothTransformation))
+        mark.setAccessibleName('KryptoCore Vault')
+        layout.addWidget(mark)
+        layout.addWidget(label('VAULT' if controls else 'KRYPTOCORE / VAULT', 'brandCaption'))
         layout.addStretch()
         if controls:
             layout.addWidget(window.firefox_indicator)
-            settings = button('⚙', window.settings, 'chrome')
+            settings = button('\ue713', window.settings, 'chrome')
+            settings.setFont(G.QFont('Segoe MDL2 Assets'))
+            settings.setFixedSize(30, 28)
             settings.setAccessibleName('Einstellungen')
             settings.setToolTip('Einstellungen')
             layout.addWidget(settings)
             for text, name, action in [('−', 'Minimieren', window.showMinimized), ('□', 'Maximieren oder wiederherstellen', window.toggle_maximize)]:
                 control = button(text, action, 'chrome')
+                control.setFixedSize(30, 28)
                 control.setAccessibleName(name)
                 control.setToolTip(name)
                 layout.addWidget(control)
         close = button('×', window.close, 'chrome')
+        close.setFixedSize(30, 28)
         close.setAccessibleName('Schließen')
         close.setToolTip('Schließen')
         layout.addWidget(close)
@@ -316,7 +357,7 @@ class TitleBar(W.QFrame):
 
 
 class Panel(W.QDialog):
-    def __init__(self, parent, title, hint='', *, framed=True):
+    def __init__(self, parent, title, hint='', *, framed=False):
         super().__init__(parent, C.Qt.Dialog | C.Qt.FramelessWindowHint)
         self.setObjectName('panel')
         self.setWindowTitle(title)
@@ -327,7 +368,12 @@ class Panel(W.QDialog):
         outer.addWidget(TitleBar(self))
         body = W.QWidget()
         body.setObjectName('panelBody')
-        outer.addWidget(body)
+        scroll = W.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(C.Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(body)
+        scroll.setMinimumHeight(180)
+        outer.addWidget(scroll)
         content = W.QVBoxLayout(body)
         content.setContentsMargins(19, 17, 19, 19)
         content.setSpacing(12)
@@ -339,6 +385,14 @@ class Panel(W.QDialog):
         self.layout = tile(content) if framed else content
         self.error = label('', 'error')
         self.error.setWordWrap(True)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        screen = self.screen().availableGeometry()
+        body = self.findChild(W.QWidget, 'panelBody')
+        target = (body.sizeHint().height() if body is not None else 440) + 50
+        self.resize(min(max(self.width(), 420), screen.width() - 40),
+                    min(max(260, target), screen.height() - 80))
 
     def field(self, name, value=''):
         widget = W.QLineEdit(value)
@@ -415,6 +469,8 @@ class Vault(W.QWidget):
         self.firefox_lock = None
         self.firefox_key_path = None
         self.firefox_indicator = button('Firefox', self.firefox_panel, 'firefoxBadge')
+        self.firefox_indicator.setMaximumWidth(140)
+        self.firefox_indicator.setAccessibleName('Firefox-Verbindung')
         outer = W.QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self.surface)
@@ -656,7 +712,7 @@ class Vault(W.QWidget):
             if not self.firefox_lock.tryLock(0):
                 raise VaultError('Firefox wird bereits von einem anderen Vault-Fenster verwendet.')
             library = HERE / 'vault_firefox_channel.dll'
-            if not library.is_file():
+            if ROOT is not None and not library.is_file():
                 library = ROOT / 'target/release/vault_firefox_channel.dll'
             self.firefox_library = ChannelLibrary(library)
             if not self.firefox_server.listen(FIREFOX_PIPE):
@@ -705,15 +761,7 @@ class Vault(W.QWidget):
     def register_firefox(self):
         import winreg
 
-        manifest = HERE / f'{FIREFOX_HOST}.json'
-        config = {
-            'name': FIREFOX_HOST, 'description': 'KryptoCore Vault local connection',
-            'path': str(backend('vault-firefox-host')), 'type': 'stdio',
-            'allowed_extensions': [FIREFOX_ID],
-        }
-        data = json.dumps(config).encode('utf-8')
-        if not manifest.is_file() or manifest.read_bytes() != data:
-            write_local_file(manifest, data)
+        manifest = firefox_manifest(self.settings_folder)
         registry = rf'Software\Mozilla\NativeMessagingHosts\{FIREFOX_HOST}'
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, registry) as key:
@@ -753,7 +801,7 @@ class Vault(W.QWidget):
         outer.addWidget(self.open_button)
         secondary = row(
             StartTile('Neuer Tresor', 'Einen Tresor anlegen', '+', lambda: self.open(True)),
-            StartTile('Wiederherstellen', 'Mit dem Notfallblatt', '↺', self.recover),
+            StartTile('Wiederherstellen', 'Mit dem Notfallblatt', '\ue777', self.recover),
         )
         secondary.setSpacing(10)
         outer.addLayout(secondary)
@@ -991,6 +1039,7 @@ class Vault(W.QWidget):
         password = dialog.secret('Tresorpasswort')
         if create:
             strength = W.QProgressBar(minimum=0, maximum=5, textVisible=False)
+            strength.setFixedHeight(6)
             feedback = label('', 'muted')
             feedback.setWordWrap(True)
             dialog.layout.addWidget(strength)
@@ -1532,6 +1581,36 @@ def main():
     app.setStyle('Fusion')
     app.setStyleSheet(STYLE)
     window = Vault()
+    if ROOT is None and sys.argv[1:] == ['--verify-bundle']:
+        from tempfile import TemporaryDirectory
+
+        if G.QPixmap(str(HERE / 'vault-emblem.png')).isNull() or zxcvbn is None:
+            raise VaultError('Bundled Vault assets or password estimator missing.')
+        zxcvbn('test only vault bundle phrase 92')
+        library = ChannelLibrary(HERE / 'vault_firefox_channel.dll')
+        channel = Channel(library)
+        channel.close()
+        with TemporaryDirectory(prefix='kcv-bundle-check-') as scratch:
+            root = Path(scratch)
+            manifest = firefox_manifest(root)
+            host = Path(json.loads(manifest.read_bytes())['path'])
+            if not host.is_relative_to(root) or host.read_bytes() != backend('vault-firefox-host').read_bytes():
+                raise VaultError('Bundled Firefox native host could not be provisioned.')
+            request = dict(action='open', path=str(root / 'test.kcv'),
+                           password='test only vault bundle phrase 92', create=True,
+                           recovery=secrets.token_hex(32))
+            for create in (True, False):
+                request['create'] = create
+                if not create:
+                    request['recovery'] = None
+                result = subprocess.run(
+                    [str(backend()), 'desktop-session'], input=json.dumps(request) + '\n',
+                    capture_output=True, encoding='utf-8', check=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW, timeout=30,
+                )
+                if json.loads(result.stdout).get('entries') != []:
+                    raise VaultError('Bundled backend could not open a test vault.')
+        return 0
     window.show()
     C.QTimer.singleShot(0, window.open_recent_at_startup)
     window.open_button.setFocus()

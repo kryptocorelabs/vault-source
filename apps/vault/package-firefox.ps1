@@ -22,7 +22,7 @@ try {
 }
 
 $null = New-Item -ItemType Directory -Path $package -Force
-$files = @('popup.html', 'popup.js', 'login-form.js', 'firefox-client.js',
+$files = @('popup.html', 'popup.css', 'popup.js', 'login-form.js', 'firefox-client.js',
     'firefox-background.js', 'firefox-page.js', 'vault-icon.svg')
 foreach ($file in $files) {
     Copy-Item -LiteralPath (Join-Path $extension $file) -Destination $package

@@ -20,6 +20,16 @@ Use Firefox 0.1.15 with Vault 0.1.0-rc.2 for session-bound saving.
 Existing v5 pairings from Vault RC.1 carry over to RC.2.
 Self-distributed updates need their own distribution path.
 
+## Version 0.1.16 design preview
+
+The popup and in-page actions follow the shared desktop palette and rounded
+surfaces. Popup styling is a separate, browser-independent CSS file. Connection
+and permission states remain explicit. Existing pairing and session checks are
+unchanged. Chrome and Edge support is planned, not implemented in this package.
+
+The 0.1.16 ZIP is an unsigned Mozilla submission package until Mozilla returns
+a signed XPI. It is not an automatically installed update.
+
 ## Version 0.1.15 release notes
 
 The popup and website assistant refresh when logins are added or removed
