@@ -6,6 +6,9 @@ Firefox 140+ is the implemented browser companion. Package it with
 `manifest.firefox.json` through `package-firefox.ps1`; the packaging script
 includes `popup.css`. Existing pairings and the local encrypted channel are
 unchanged by the interface update. Global website access remains optional.
+The Mozilla-signed 0.1.16 XPI supports normal persistent installation. The
+unsigned ZIP remains a development/reviewer artifact. See the public
+[Firefox installation guide](https://github.com/kryptocorelabs/vault/blob/main/FIREFOX.md).
 
 The popup's HTML, CSS, form recognition and user-facing states can be shared
 with future browser ports. Styling lives in `extension/popup.css`; it does not

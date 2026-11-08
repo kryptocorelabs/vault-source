@@ -4,7 +4,17 @@ KryptoCore Vault Preview requires Firefox 140 or later and the Vault desktop
 build for Windows with the Firefox pairing workflow. The extension ID is
 `vault@kryptocorelabs`. The Windows native host uses the same ID.
 
-## Submit the package
+## Current signed package
+
+Mozilla-signed Firefox 0.1.16 is published through the
+[Vault Firefox release](https://github.com/kryptocorelabs/vault/releases/tag/firefox-v0.1.16).
+Install its XPI persistently through `about:addons` → gear menu →
+Install Add-on From File. Signature enforcement, unsigned/tampered rejection
+and persistence after restart passed with Firefox 159.0.1 in a disposable
+profile. These checks do not replace full desktop/browser workflow testing.
+Windows Authenticode signing and independent audit remain separate.
+
+## Submit future packages
 
 1. Submit the Firefox ZIP in the [Mozilla Add-ons Developer Hub](https://addons.mozilla.org/developers/addon/submit/distribution).
    Choose **On your own** to get a signed build for self-distribution.
@@ -16,7 +26,8 @@ build for Windows with the Firefox pairing workflow. The extension ID is
    Install Add-on From File** to install the XPI.
 
 The signed extension and its pairing persist after a Firefox restart.
-Use Firefox 0.1.15 with Vault 0.1.0-rc.2 for session-bound saving.
+The historical Firefox 0.1.15 / Vault 0.1.0-rc.2 combination has its own
+session-bound saving tests; the current signed add-on is 0.1.16.
 Existing v5 pairings from Vault RC.1 carry over to RC.2.
 Self-distributed updates need their own distribution path.
 
@@ -27,8 +38,9 @@ surfaces. Popup styling is a separate, browser-independent CSS file. Connection
 and permission states remain explicit. Existing pairing and session checks are
 unchanged. Chrome and Edge support is planned, not implemented in this package.
 
-The 0.1.16 ZIP is an unsigned Mozilla submission package until Mozilla returns
-a signed XPI. It is not an automatically installed update.
+The original 0.1.16 ZIP remains unsigned submission evidence. Mozilla returned
+the signed XPI, which is distributed unchanged. Updates for this self-distributed
+package currently require manually installing the next signed XPI.
 
 ## Version 0.1.15 release notes
 
@@ -116,7 +128,7 @@ From the workspace root, add the `wasm32-unknown-unknown` Rust target and
 run `./apps/vault/package-firefox.ps1` in PowerShell. It builds the locked
 WebAssembly module, copies the extension files and license texts, and writes
 the ZIP to `dist`. Run `web-ext lint --self-hosted --source-dir
-dist/vault-firefox-amo-0.1.15`. The build script also writes SHA-256
+dist/vault-firefox-amo-0.1.16`. The build script also writes SHA-256
 checksums for the ZIP and the WebAssembly module.
 The Chrome manifest and desktop binaries are separate from the Firefox package.
 The current linter may report an [Android compatibility warning](https://github.com/mozilla/web-ext/issues/3561)
