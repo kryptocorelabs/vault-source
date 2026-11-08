@@ -1,6 +1,6 @@
 # Vault CI
 
-Vault source is maintained in the private `kryptocorelabs/vault-source`
+Vault source is maintained in the public `kryptocorelabs/vault-source`
 repository. Use `publishing/vault-source/` as the local checkout for Vault
 changes and CI runs. The public `kryptocorelabs/vault` repository hosts
 release notes and downloads.

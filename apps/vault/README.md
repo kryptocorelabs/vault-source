@@ -1,159 +1,116 @@
 # KryptoCore Vault 0.1.0-rc.2
 
-Lokaler Passwortmanager mit Desktop- und Terminaloberfläche sowie Browser-Popup.
-Verwende für diese Entwicklungsvorschau ausschließlich Testdaten. Die Formate
-`KCV1` und `KCV2` können sich noch ändern.
+Local password manager with a Windows desktop interface, Rust CLI and Firefox
+companion. Vault and its extension are open source under the workspace's MIT
+license. Dependencies retain their own terms. This remains a development preview;
+use synthetic data and retain backups. Independent security audit is pending.
 
-Vault verschlüsselt gespeicherte Logins lokal. Softwarefehler, Geräteausfall
-und verlorene Zugänge können trotzdem zu Datenverlust führen. Gesetzliche
-Rechte und die gesetzlich vorgesehene Haftung bleiben unberührt.
-Die [Nutzungshinweise](USAGE.md) und der [Meldeweg für Sicherheitslücken](SECURITY.md)
-erklären, wie du Sicherungen prüfst und Probleme vertraulich meldest.
+Software defects, device failure and lost credentials can cause data loss.
+Read the [usage notes](USAGE.md), [security boundaries](SECURITY.md) and
+[third-party notices](../../THIRD_PARTY_NOTICES.md). Statutory rights and
+applicable legal responsibilities are not displaced by these notices.
 
-Die [Lizenzhinweise und Abhängigkeitsliste](../../THIRD_PARTY_NOTICES.md)
-beschreiben die Bestandteile der Desktop- und Firefox-Pakete.
+## End-user builds and development
 
-## Tresor ausprobieren
+The [single-file Windows build](WINDOWS-ONEFILE.md) bundles Python, Qt and the
+Rust components. Users of that build do not install the development environment.
+Historical public previews may still have the older setup workflow: use the
+instructions for the exact artifact you downloaded.
 
-Für einen lokalen Windows-Test gibt es eine [Einzeldatei-Vorschau](WINDOWS-ONEFILE.md).
+For source development on Windows, install Rust and its MSVC build prerequisites,
+Python 3.13 x64, and the pinned GUI requirements. From the workspace root:
 
-Unter Windows kannst du [Vault öffnen](desktop/vault.pyw), wenn Python, Qt für
-Python und das gebaute Rust-Backend vorhanden sind. Installiere die Abhängigkeiten
-mit `python -m pip install -r apps/vault/desktop/requirements.txt`. Im Projektordner
-startest du die Oberfläche mit `python apps/vault/desktop/vault.pyw`. Zum Bauen des Backends dient
-`cargo build --locked --release -p kryptocore-vault -p vault-firefox-channel`.
+```powershell
+cargo build --locked --release -p kryptocore-vault -p vault-firefox-channel
+python -m pip install -r apps/vault/desktop/requirements.txt
+python apps/vault/desktop/vault.pyw
+```
 
-In der Oberfläche kannst du einen Tresor anlegen oder öffnen, Einträge suchen,
-bearbeiten und löschen und Passwörter erzeugen. Mit **Sperren**, `Strg+L` oder
-nach der Sperrfrist endet die Sitzung. Firefox kann erst nach dem Entsperren
-wieder Logins abrufen.
+See [CI and build consistency](CI.md) for tests and exact toolchain details.
+The [shared format reader](../../modules/vault-format/README.md) supports
+KCV1/KCV2; format/API compatibility changes must be explicit and tested.
 
-Beim Anlegen eines Tresors wählst du ein Tresorpasswort oder eine Passphrase.
-Die lokale Stärkeschätzung mit zxcvbn ist eine Orientierung.
-Passphrasen mit mehr als 72 Zeichen werden akzeptiert und liegen außerhalb des
-Schätzbereichs. Über **Anzeigen** kannst du auch neu erzeugte Passwörter vor dem
-Speichern prüfen.
+## Everyday use
 
-In den **Einstellungen** wählst du den Sicherheitsmodus. **Alltag** merkt
-sich die letzte Tresordatei, fragt beim Start direkt nach dem Passwort und
-sperrt nach fünf Minuten ohne Eingabe in Vault. **Streng** merkt sich keinen
-Dateipfad, sperrt nach einer Minute und lässt neue Logins nur in der
-Desktop-App speichern. Beide Modi verwenden dieselbe Tresorverschlüsselung
-und dieselbe Wiederherstellung.
+Create or open a vault, search logins, edit or delete entries and generate
+passwords. **Sperren**, `Ctrl+L`, inactivity or the applicable Windows session
+events end the unlocked session. Firefox cannot request new credentials until
+Vault is unlocked again.
 
-Unter **Darstellung** lässt sich der leichte Glas-Effekt für den
-Fensterhintergrund unter Windows ein- und ausschalten.
+New vaults use a vault password/passphrase. The local zxcvbn estimate is guidance,
+not a security guarantee. Longer passphrases are accepted; inputs above 72
+characters are outside the estimator's range. Password fields provide deliberate
+reveal/hide controls, including generated passwords.
 
-### Terminal
+Settings offer two policies using the same vault encryption and recovery:
 
-Aus dem Repository-Stamm mit einer aktuellen Rust-Toolchain ausführen.
+- **Alltag:** remembers the most recent vault path, asks for its password at
+  startup and locks after five minutes without activity in Vault. Supports
+  deliberate browser save offers.
+- **Streng:** does not retain a recent path, locks after one minute and saves
+  new logins through the desktop editor. Browser filling uses the popup.
+
+The optional Windows glass effect changes the background only. Settings and
+recovery dialogs scroll on smaller displays; the compact start tiles follow
+the shared Messenger palette. UI language is separate from documentation language.
+
+## Firefox
+
+The [Mozilla-signed 0.1.16 XPI](https://github.com/kryptocorelabs/vault/releases/tag/firefox-v0.1.16)
+is installed persistently through Firefox `about:addons` → gear menu →
+Install Add-on From File. Requires Firefox 140+ and Vault's v5 pairing support.
+See [signing and verification](FIREFOX_RELEASE.md) for the exact test scope.
+
+Unlock Vault, create a connection code under **Firefox**, then paste it into
+the trusted extension popup once. The code expires after two minutes and is
+consumed on successful pairing. Existing compatible v5 pairings carry over
+when updating; **Firefox trennen** revokes the pairing.
+
+The popup offers matching credentials for the current HTTPS origin. Use
+**Login ausfüllen**, inspect the fields and submit the form yourself. On split
+username/password pages, invoke filling on the appropriate step. Ambiguous
+forms can need a focused field or manual transfer. Unsupported or unsafe forms
+are rejected rather than filled speculatively.
+
+Global HTTPS form detection is optional and initially disabled. Site assistance
+requires a separate opt-in for the exact origin, including its port. It can
+offer page actions for filling or opening a new Vault entry. Eligible save offers
+require explicit confirmation; their session and navigation checks remain in
+force. `Alt+Shift+K` opens the extension popup.
+
+Vault and Firefox authenticate/encrypt each request with a fresh Noise session.
+The helper relays ciphertext. Windows DPAPI protects Vault's pairing key; Firefox
+stores its key through Web Crypto. The browser, unlocked processes and Windows
+account are trust boundaries. A page can read credentials inserted into its own
+fields. Signing is not a claim of absolute security or an independent audit.
+
+Chrome and Edge are planned separately. The old loopback prototype manifest is
+not a supported browser port. See [browser support](BROWSERS.md).
+
+## Backups and recovery
+
+In an unlocked vault choose **Einstellungen → Sicherung erstellen** to create a
+checked encrypted copy. Existing destinations are protected. Keep dated backups
+on separate storage and test an additional copy before relying on recovery.
+
+Creating a vault includes a separate emergency-sheet step. Save its PDF and keep
+it protected, retrievable and separate from the vault file. Anyone holding both
+can use the recovery credential. Recovery does not repair missing or corrupted
+ciphertext. Loss of every valid credential can make the contents inaccessible.
+
+An unlocked vault can configure/renew the sheet under **Einstellungen →
+Notfallblatt einrichten oder erneuern**. Old vault copies keep their old access
+credentials. Earlier applications without KCV2 support cannot read that format.
+YubiKey integration and a dedicated password blocklist remain future work.
+
+## CLI
 
 ```sh
 cargo run --locked --release -p kryptocore-vault -- init demo.kcv
-cargo run --locked --release -p kryptocore-vault -- add demo.kcv https://example.com
+cargo run --locked --release -p kryptocore-vault -- add demo.kcv https://example.invalid
 cargo run --locked --release -p kryptocore-vault -- list demo.kcv
 ```
 
-Das Terminal fragt Passwörter verdeckt ab. `list` zeigt die Website und den
-Benutzernamen. `remove demo.kcv https://example.com` löscht den Eintrag. Pro
-HTTPS-Origin ist in dieser Vorschau ein Login vorgesehen. Jeder Befehl öffnet
-den Tresor neu. Beim Beenden werden die gehaltenen Einträge verworfen.
-
-## Login im Browser abrufen
-
-### Firefox unter Windows
-
-1. Das Firefox-Add-on ab Version 0.1.15 installieren und den Tresor in Vault
-   ab 0.1.0-rc.2 entsperren.
-2. Bei der ersten Kopplung in Vault unter **Firefox → Verbindungscode erstellen**
-   einen Code erzeugen und im Add-on eingeben. Der Code ist zwei Minuten
-   gültig und wird bei erfolgreicher Kopplung verbraucht.
-
-Beim Öffnen prüft das Add-on das Anmeldeformular im aktiven HTTPS-Tab.
-Ein gespeicherter Eintrag wird dort angeboten. Über **Login ausfüllen**
-kannst du ihn einsetzen. Bei getrennten
-Anmeldeschritten denselben Button auf dem Passwortschritt erneut wählen. Prüfe
-die Felder und melde dich selbst an. Wenn das Add-on kein eindeutiges Formular
-erkennt, kannst du den passenden Login im Add-on manuell übernehmen. Über
-**Website für Vault kopieren** kannst du die Adresse des Tabs beim Anlegen
-eines Eintrags übernehmen.
-
-Ab Version 0.1.8 erkennt das Add-on auch JavaScript-Formulare wie im
-Brunata-Portal. Formulare, die Zugangsdaten per GET oder an eine andere
-Website senden könnten, bleiben vom automatischen Ausfüllen ausgeschlossen.
-
-Ab Version 0.1.9 bewertet Vault Anmeldeformulare getrennt. Stehen mehrere
-plausible Formulare zur Auswahl, klicke zuerst in das gewünschte Anmeldefeld
-und öffne das Add-on. Eingebettete Formulare werden berücksichtigt, wenn
-ihre HTTPS-Origin mit der des Tabs übereinstimmt.
-
-Im Modus **Alltag** kannst du ein ausgefülltes Anmeldeformular über **Login in
-Vault speichern** als neuen Eintrag übernehmen. Die Felder werden erst bei
-dieser Aktion für das Speichern ausgelesen. Bearbeite vorhandene Einträge in
-Vault. Das Add-on speichert nur für die Adresse des aktuellen HTTPS-Tabs.
-
-Ab Version 0.1.11 kannst du im Firefox-Popup die Formularerkennung für alle
-HTTPS-Websites einschalten. Firefox fragt einmal nach der Berechtigung. In
-diesem Modus prüft das Add-on die Formularstruktur und zeigt bei einem Treffer
-einen Hinweis. Ein Klick darauf öffnet das Firefox-Popup.
-
-Schalte den **Website-Assistenten** für eine einzelne Website ein, um die
-Kurzaktionen direkt auf der Seite zu nutzen. Bei einem gespeicherten Login
-füllt **Ausfüllen** die passenden Felder. Ohne passenden Eintrag öffnet
-**Login anlegen** den Editor in Vault mit vorausgefüllter Website. Nach dem
-Absenden eines unterstützten Formulars kannst du im Modus **Alltag** einen
-neuen Login im Firefox-Popup speichern. Dort kannst du die Freigaben auch
-wieder ausschalten. **Alt+Umschalt+K** öffnet das Add-on.
-
-Firefox 0.1.14 und Vault 0.1.0-rc.2 binden das Speichern an die aktive
-Tresorsitzung. Bestehende v5-Kopplungen aus RC.1 bleiben gültig.
-Über **Firefox trennen** kannst du die Kopplung widerrufen.
-
-Vault und Firefox authentifizieren und verschlüsseln jede Anfrage mit einer
-frischen Noise-Sitzung. Der Helfer leitet verschlüsselte Nachrichten weiter.
-Vault schützt seinen Verbindungsschlüssel mit Windows DPAPI. Firefox hält
-seinen dauerhaften Schlüssel als nicht exportierbaren Web-Crypto-Schlüssel.
-Abrufe sind an die exakte HTTPS-Origin einschließlich Port gebunden. Im Modus
-**Streng** erfolgt das Ausfüllen über das Firefox-Popup.
-
-Vault sperrt sich bei Inaktivität, beim Sperren oder Trennen der
-Windows-Sitzung sowie beim Ruhezustand. Browser und Windows-Konto gehören
-zur Vertrauensgrenze. Nach dem Ausfüllen kann die passende Website die
-eingefügten Zugangsdaten lesen.
-Die [Firefox-Release-Notizen](FIREFOX_RELEASE.md) beschreiben den Weg zur
-dauerhaft installierbaren, signierten Version.
-
-### Chrome und Edge
-
-Im Entwicklermodus `apps/vault/extension` als entpackte Erweiterung laden.
-Den Login für die passende HTTPS-Seite über das Terminal einmalig freigeben
-und den angezeigten Code im Add-on eingeben.
-
-```sh
-cargo run --locked --release -p kryptocore-vault -- share demo.kcv https://example.com
-```
-
-## Sicherung und Wiederherstellung
-
-Wähle im entsperrten Tresor **Einstellungen → Sicherung erstellen**. Vault
-prüft die Tresordatei und speichert eine verschlüsselte Kopie. Vorhandene
-Dateien werden dabei geschützt. Lege regelmäßig datierte Kopien auf einem
-getrennten Datenträger ab. Zum Testen öffnest du eine zusätzliche Kopie
-oder setzt dort mit **Wiederherstellen** das Tresorpasswort zurück.
-
-Beim Anlegen eines Tresors zeigt Vault das Notfallblatt in einem eigenen
-Schritt. Speichere es als PDF und bewahre es geschützt und getrennt von der
-Tresordatei auf. Wer Datei und Blatt besitzt, kann ein neues Tresorpasswort
-setzen. Bei einem entsperrten Tresor kannst du das Blatt unter
-**Einstellungen → Notfallblatt einrichten oder erneuern** verwalten. Alte Dateikopien behalten
-ihre alten Zugänge. Frühere Vault-Versionen unterstützen `KCV2` nicht.
-
-YubiKey und Passwort-Sperrliste folgen separat.
-
-
-## Browser support and appearance
-
-The development interface shares the Messenger palette and rounded surfaces.
-Vault retains its compact start tiles and uses scrollable settings/recovery
-dialogs. Firefox 0.1.16 includes the matching popup design. Existing releases
-remain unchanged. See [browser support and the Chrome/Edge plan](BROWSERS.md).
+The terminal prompts for credentials with input hidden. `list` shows websites
+and usernames; `remove demo.kcv https://example.invalid` removes that entry.
+Each command opens the vault for its own operation. Use only disposable test data.
