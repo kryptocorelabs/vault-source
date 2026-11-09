@@ -1,16 +1,14 @@
-# Optional local rollback warnings — unreleased
+# Local rollback warnings
 
-KCV1 and KCV2 remain supported and are not silently rewritten. New vaults still
-use the existing format. With an unlocked KCV2 vault, choose **Einstellungen →
-Versionsvergleich als neue Kopie aktivieren** (Settings → Enable version checks
-as a new copy). This creates a **KCV3 copy** with a new random vault ID and epoch
-1, preserves the original file, retains password/emergency-sheet access and
-switches the active session to the copy. A KCV1 vault needs recovery configured
-first. Existing destination files are never overwritten.
+The desktop development build creates KCV4 files with local revision checks.
+With an unlocked KCV2 or KCV3 vault, choose **Einstellungen → Neue KCV4-Kopie
+anlegen**. The copy starts at revision 1 with a fresh vault ID, retains password
+and emergency-sheet access, and becomes the active file. Use a new destination.
+The source stays available as a separate copy. Configure a recovery slot first
+if the source uses KCV1.
 
-**Use current KCV3-capable Vault and Rescue builds for that copy.** Older apps
-reject the new format. The currently published Rescue preview.3 download does
-not support it; this change is in development source/local review builds only.
+**Use KCV4-capable Vault and Rescue builds for that copy.** The currently
+published Rescue preview.3 predates KCV4. Use the newer source for evaluation.
 Keep the original and a tested backup. Browser pairings are unchanged; pending
 browser requests are invalidated when the active file switches to the new copy.
 
@@ -42,7 +40,7 @@ it and correct the local storage problem rather than overwriting it.
 
 ## Deliberate recovery and limits
 
-For an intentionally older backup, use a working copy in the current KCV3-capable
+For an intentionally older backup, use a working copy in a compatible version of
 Rescue and export to a fresh protected destination. Rescue is read-only with
 respect to the source and deliberately does not enforce Vault's local floor or
 claim that a backup is the newest. See [rescue-first workflow](https://github.com/kryptocorelabs/kryptocore/blob/main/RESCUE-FIRST.md).
@@ -55,6 +53,6 @@ hardware, server synchronization or an authoritative revision service.
 The public header exposes an ID and revision count; copies can be correlated.
 Activation retains the existing seed and is not a credential-revocation operation.
 
-See the [KCV3 byte contract](../../modules/vault-format/KCV3.md). The encryption
-Core, KDF parameters and browser channel have not been changed. Maintainer tests
-and native CI are not an independent security audit.
+See the [KCV3 byte contract](../../modules/vault-format/KCV3.md) and
+[KCV4 profile](../../modules/vault-format/KCV4.md). Maintainer tests and native
+CI are still awaiting independent security review.

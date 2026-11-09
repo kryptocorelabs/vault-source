@@ -4,6 +4,10 @@ Internal application-format crate for Vault and Rescue. This is separate from
 the minimal cryptographic Core. KCV1/KCV2 bytes, KDF parameters, slot roles,
 associated data and validation are unchanged.
 
+Vault and Rescue share this implementation. Rescue pins an exact public
+revision of this crate. Vault's current desktop creates [KCV4](KCV4.md) files
+with the local revision check and a random payload key.
+
 The existing `apps/vault/src/container.rs` implementation and its tests
 were moved here. Vault re-exports this API and uses the same zeroizing Login
 schema. Rescue calls `open` or the new read-only `open_with_recovery`; it never
@@ -19,9 +23,9 @@ back door or bypass is provided.
 
 ## Optional epoch profile
 
-[KCV3](KCV3.md) is an explicit opt-in copy with authenticated ID/epoch and
-caller-supplied freshness minima. KCV1/KCV2 remain unchanged; old readers reject
-KCV3. Rescue reads all three without claiming backup freshness.
+[KCV3](KCV3.md) is the earlier epoch profile with authenticated ID/epoch and
+caller-supplied freshness minima. KCV4 uses the same revision checks. Rescue
+can authenticate a copy for recovery without claiming backup freshness.
 
 `open_with_metadata` returns format/recovery facts from the same authenticated
 bytes as the plaintext. `create_with_recovery` atomically creates a complete
@@ -30,7 +34,7 @@ overwrites an existing destination. JSON transfer validation and the UI live
 in Vault, outside the minimal Core.
 
 `change_password_with_revision` adds an unlocked change without altering format
-interpretation. Its default retains the KCV2/KCV3 seed and recovery slot; explicit
+interpretation. Its default retains the existing payload secret and recovery slot. Explicit
 rotation takes a recovery credential for newly wrapped access. The GUI generates
 a fresh one and saves a replacement sheet. KCV1 always derives a fresh key and
 stays KCV1. The return value reports the observed revision and whether the key
@@ -63,9 +67,6 @@ protects updated files from a key recovered from a pre-reset snapshot; it cannot
 revoke that snapshot or any plaintext already disclosed. A current recovery
 secret still opens the updated file. Complete-file rollback is not detected.
 
-The KCV2 `payload_key` derivation still uses the fixed Argon2id profile and
-`KCV2 payload key` salt. A memory-hard password KDF adds unnecessary cost to a
-uniformly random seed; a domain-separated HKDF is a candidate for a future
-profile ([RFC 5869](https://www.rfc-editor.org/rfc/rfc5869.html)). Changing the
-derivation in place would break existing KCV2 readers. Any replacement requires
-explicit format versioning, compatibility tests and a migration design.
+KCV2 and KCV3 retain the fixed Argon2id payload derivation and `KCV2 payload key`
+salt for compatibility. KCV4 imports the authenticated random 32-byte slot
+secret as the payload key. See [the new format and migration rules](KCV4.md).

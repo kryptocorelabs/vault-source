@@ -1,6 +1,6 @@
 use std::{
     io::{self, BufRead, Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::mpsc,
     thread,
 };
@@ -24,6 +24,7 @@ enum Request {
         password: Zeroizing<String>,
         create: bool,
         recovery: Option<Zeroizing<String>>,
+        format_version: Option<u8>,
         #[serde(default)]
         minimum_revision: Option<container::Revision>,
     },
@@ -43,6 +44,7 @@ enum Request {
         path: PathBuf,
         password: Zeroizing<String>,
         recovery: Zeroizing<String>,
+        format_version: Option<u8>,
         #[serde(default)]
         minimum_revision: Option<container::Revision>,
     },
@@ -63,6 +65,9 @@ enum Request {
         expected_sha256: Option<String>,
     },
     EnableEpoch {
+        destination: PathBuf,
+    },
+    UpgradePayload {
         destination: PathBuf,
     },
     EnableRecovery {
@@ -205,6 +210,18 @@ impl Session {
             self.revision = Some(revision);
             return Ok(list(&entries));
         }
+        if let Request::UpgradePayload { destination } = &request {
+            let _lock = lock_writer(&self.path)?;
+            let (entries, revision) = container::upgrade_payload_copy(
+                &self.path,
+                destination,
+                self.password.as_bytes(),
+                self.revision,
+            )?;
+            self.path = destination.clone();
+            self.revision = Some(revision);
+            return Ok(list(&entries));
+        }
         if let Request::Backup { destination } = &request {
             let _lock = lock_writer(&self.path)?;
             self.revision = container::backup_with_revision(
@@ -319,6 +336,7 @@ impl Session {
             | Request::Export { .. }
             | Request::EnableRecovery { .. }
             | Request::EnableEpoch { .. }
+            | Request::UpgradePayload { .. }
             | Request::Backup { .. } => return Err("Tresor ist bereits geöffnet"),
         }
         let encoded = Zeroizing::new(
@@ -344,6 +362,20 @@ fn check_recovery(recovery: &str) -> Result<(), &'static str> {
         return Err("Der Wiederherstellungsschlüssel muss aus 64 Hex-Zeichen bestehen");
     }
     Ok(())
+}
+
+fn create_recoverable(
+    path: &Path,
+    password: &[u8],
+    recovery: &[u8],
+    data: &[u8],
+    version: Option<u8>,
+) -> Result<Option<container::Revision>, &'static str> {
+    match version {
+        Some(4) => container::create_with_recovery_v4(path, password, recovery, data).map(Some),
+        None => container::create_with_recovery(path, password, recovery, data).map(|_| None),
+        _ => Err("Unbekanntes Tresorformat"),
+    }
 }
 
 fn list(entries: &[Login]) -> Value {
@@ -377,7 +409,7 @@ pub fn run() -> Result<(), &'static str> {
                     Request::InspectImport { source } => transfer::prepare(&source).map(|prepared| {
                         json!({"entry_count": prepared.entries.len(), "digest": prepared.digest})
                     }),
-                    Request::Import { source, expected_digest, path, password, recovery, minimum_revision } => (|| {
+                    Request::Import { source, expected_digest, path, password, recovery, format_version, minimum_revision } => (|| {
                         if minimum_revision.is_some() {
                             return Err("Dieser Speicherort gehört bereits zu einem geschützten Tresor. Wähle einen neuen Namen.");
                         }
@@ -388,8 +420,10 @@ pub fn run() -> Result<(), &'static str> {
                             return Err("Die Exportdatei wurde seit der Vorschau geändert. Wähle sie erneut aus.");
                         }
                         let _lock = lock_writer(&path)?;
-                        container::create_with_recovery(&path, password.as_bytes(), recovery.as_bytes(), &prepared.data)?;
-                        let opened = Session {path, password, share: None, revision: None};
+                        let revision = create_recoverable(
+                            &path, password.as_bytes(), recovery.as_bytes(), &prepared.data, format_version,
+                        )?;
+                        let opened = Session {path, password, share: None, revision};
                         let reply = list(&prepared.entries);
                         session = Some(opened);
                         Ok(reply)
@@ -399,8 +433,13 @@ pub fn run() -> Result<(), &'static str> {
                         password,
                         create,
                         recovery,
+                        format_version,
                         minimum_revision,
                     } => (|| {
+                        if format_version.is_some() && (!create || recovery.is_none()) {
+                            return Err("Das Dateiformat lässt sich nur beim Anlegen mit Notfallzugang wählen.");
+                        }
+                        let mut revision = minimum_revision;
                         if create {
                             if minimum_revision.is_some() {
                                 return Err("Dieser Speicherort gehört bereits zu einem geschützten Tresor. Wähle einen neuen Namen.");
@@ -411,12 +450,7 @@ pub fn run() -> Result<(), &'static str> {
                             let _lock = lock_writer(&path)?;
                             if let Some(recovery) = recovery {
                                 check_recovery(&recovery)?;
-                                container::enable_recovery(
-                                    &path,
-                                    password.as_bytes(),
-                                    recovery.as_bytes(),
-                                    true,
-                                )?;
+                                revision = create_recoverable(&path, password.as_bytes(), recovery.as_bytes(), b"[]", format_version)?;
                             } else {
                                 container::save(&path, password.as_bytes(), b"[]", true)?;
                             }
@@ -425,7 +459,7 @@ pub fn run() -> Result<(), &'static str> {
                             path,
                             password,
                             share: None,
-                            revision: minimum_revision,
+                            revision,
                         };
                         let entries = opened.entries()?;
                         session = Some(opened);

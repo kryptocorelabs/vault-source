@@ -601,12 +601,19 @@ class Vault(W.QWidget):
         dialog.layout.addWidget(button('Neuen Tresor aus JSON erstellen', lambda: dialog.done(9)))
         dialog.layout.addSpacing(7)
         dialog.layout.addWidget(label('ÄLTERE DATEISTÄNDE ERKENNEN', 'eyebrow'))
-        epoch_hint = label('Optional: Eine neue KCV3-Kopie mit lokalem Versionsvergleich anlegen. Ältere Apps können diese Kopie nicht öffnen.'
+        epoch_hint = label('KCV2 und KCV3 lassen sich als neue KCV4-Kopie mit lokalem Versionsvergleich speichern.'
                            if self.active_revision is None else f"Dateistand {self.active_revision['epoch']} · lokaler Versionsvergleich aktiv", 'muted')
         epoch_hint.setWordWrap(True)
         dialog.layout.addWidget(epoch_hint)
-        epoch_action = button('Versionsvergleich als neue Kopie aktivieren', lambda: dialog.done(6))
-        epoch_action.setEnabled(self.process is not None and self.active_revision is None)
+        epoch_action = button('Neue KCV4-Kopie anlegen', lambda: dialog.done(6))
+        can_upgrade = False
+        if self.process is not None:
+            try:
+                with Path(self.active_vault_path).open('rb') as file:
+                    can_upgrade = file.read(5) in (b'KCV2\0', b'KCV3\0')
+            except OSError:
+                pass
+        epoch_action.setEnabled(can_upgrade)
         dialog.layout.addWidget(epoch_action)
         if self.glass_supported:
             dialog.layout.addSpacing(7)
@@ -950,12 +957,12 @@ class Vault(W.QWidget):
             lock.unlock()
 
     def enable_epoch(self):
-        dialog = Panel(self, 'Versionsvergleich aktivieren',
-                       'Es entsteht eine neue KCV3-Kopie. Das Original bleibt erhalten und dein Notfallblatt bleibt gültig. '
-                       'Nutze für die Kopie nur aktuelle Vault- und Rescue-Versionen mit KCV3-Unterstützung. '
+        dialog = Panel(self, 'Neue KCV4-Kopie anlegen',
+                       'Vault legt eine neue Kopie mit lokalem Versionsvergleich an. Dein Original und dein Notfallblatt bleiben nutzbar. '
+                       'Öffne die Kopie mit einer Vault- oder Rescue-Version, die KCV4 unterstützt. '
                        'Der Vergleich gilt auf diesem Gerät und kann ein vollständiges Zurücksetzen von Datei und lokalem Speicher nicht erkennen.')
         def create_copy():
-            path, _ = W.QFileDialog.getSaveFileName(dialog, 'Neue KCV3-Kopie speichern', 'Mein Tresor-versioniert.kcv',
+            path, _ = W.QFileDialog.getSaveFileName(dialog, 'Neue KCV4-Kopie speichern', 'Mein Tresor-KCV4.kcv',
                                                    'KryptoCore-Tresor (*.kcv)', options=W.QFileDialog.DontConfirmOverwrite)
             if not path:
                 return
@@ -964,7 +971,7 @@ class Vault(W.QWidget):
             try:
                 if self.epoch_cache(path) is not None:
                     raise VaultError('Dieser Speicherort ist bereits einem geschützten Tresor zugeordnet. Wähle einen neuen Namen.')
-                self.entries = self.request(action='enable_epoch', destination=path)['entries']
+                self.entries = self.request(action='upgrade_payload', destination=path)['entries']
             except VaultError as error:
                 dialog.error.setText(str(error))
                 return
@@ -972,7 +979,7 @@ class Vault(W.QWidget):
             self.firefox_epoch = secrets.token_hex(16)
             self.cancel_firefox_requests()
             self.show_library(path)
-            self.status.setText('Versionsvergleich aktiv · Originaldatei unverändert.')
+            self.status.setText('KCV4-Kopie geöffnet · Versionsvergleich aktiv.')
         dialog.finish('Neue Kopie anlegen', create_copy)
         self.show_panel(dialog)
         dialog.deleteLater()
@@ -982,7 +989,7 @@ class Vault(W.QWidget):
         for title, message in (
             ('VERSCHLÜSSELUNG', 'Vault verschlüsselt gespeicherte Logins lokal. Fehler, Geräteausfall oder ein kompromittiertes System können trotzdem zu Verlust oder Offenlegung führen. Nutze die Vorschau mit Testdaten.'),
             ('SICHERUNG', 'Lege regelmäßig verschlüsselte Kopien auf einem getrennten Datenträger ab. Bewahre das passende Notfallblatt geschützt und getrennt auf. Prüfe den Zugang an einer zusätzlichen Kopie. Alte Kopien behalten ihren damaligen Passwort- und Notfallzugang, auch nach dem Zurücksetzen.'),
-            ('ALTE DATEISTÄNDE', 'KCV1/KCV2 erkennen ältere, gültige Dateien nicht. Der optionale KCV3-Versionsvergleich braucht den lokalen Versionsspeicher. Ein gemeinsames Zurücksetzen beider lässt sich damit nicht erkennen. Prüfe bei einer Wiederherstellung den erwarteten Stand.'),
+            ('ALTE DATEISTÄNDE', 'KCV3 und KCV4 nutzen einen lokalen Versionsspeicher. Ein gemeinsames Zurücksetzen von Datei und Versionsspeicher lässt sich damit nicht erkennen. Prüfe bei einer Wiederherstellung den erwarteten Stand.'),
         ):
             dialog.layout.addWidget(label(title, 'eyebrow'))
             detail = label(message, 'muted')
@@ -1371,7 +1378,7 @@ class Vault(W.QWidget):
             raise VaultError('Der Tresor ist gesperrt.')
         action = payload.get('action')
         path = payload.get('path', self.active_vault_path)
-        if action == 'enable_epoch':
+        if action in ('enable_epoch', 'upgrade_payload'):
             path = payload['destination']
         if action in ('open', 'recover', 'import'):
             minimum = self.epoch_cache(path)
@@ -1539,10 +1546,11 @@ class Vault(W.QWidget):
                 )
                 if import_source:
                     self.entries = self.request(action='import', source=import_source, expected_digest=import_digest,
-                                                path=path, password=password.text(), recovery=recovery)['entries']
+                                                path=path, password=password.text(), recovery=recovery,
+                                                format_version=4)['entries']
                 else:
                     self.entries = self.request(action='open', path=path, password=password.text(), create=create,
-                                                recovery=recovery)['entries']
+                                                recovery=recovery, format_version=4 if create else None)['entries']
             except (OSError, VaultError) as error:
                 self.stop_session()
                 dialog.error.setText(str(error))

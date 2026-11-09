@@ -156,6 +156,8 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     vault.open(True)
     check()
     assert vault.process is not None and vault_path.is_file()
+    assert vault_path.read_bytes().startswith(b'KCV4\0')
+    assert vault.active_revision['epoch'] == 1
     assert pdf_path.read_bytes().startswith(b'%PDF')
     assert vault.dialog is None and not selections
 
@@ -290,28 +292,12 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     assert vault.request(action='reveal', site=site)['password'] == secret
     assert backup_path.read_bytes() == original == vault_path.read_bytes()
     # The unchanged recovery secret is rewrapped rather than copying its old slot.
-    assert disposable.read_bytes()[93:181] != original[93:181]
-    protected = folder / 'versioned.kcv'
-    selections.append(protected)
-    before_migration = disposable.read_bytes()
-    previous_browser_session = vault.firefox_epoch
-
-    def activate_epoch():
-        assert vault.dialog.windowTitle() == 'Versionsvergleich aktivieren'
-        if output := os.environ.get('KCV_TEST_SCREENSHOTS'):
-            vault.dialog.grab().save(str(Path(output) / 'vault-epoch-opt-in.png'))
-        click(vault.dialog, 'Neue Kopie anlegen')
-
-    later(activate_epoch)
-    vault.enable_epoch()
-    check()
-    assert protected.read_bytes().startswith(b'KCV3\0')
-    assert disposable.read_bytes() == before_migration
-    assert vault.active_revision['epoch'] == 1
-    assert vault.firefox_epoch != previous_browser_session
+    assert disposable.read_bytes()[117:205] != original[117:205]
+    protected = disposable
+    start_epoch = vault.active_revision['epoch']
     stale = protected.read_bytes()
     vault.entries = vault.request(action='put', previous=site, site=site, username=username, password=secret)['entries']
-    assert vault.active_revision['epoch'] == 2
+    assert vault.active_revision['epoch'] == start_epoch + 1
     current = protected.read_bytes()
     vault.lock()
     protected.write_bytes(stale)
@@ -342,7 +328,7 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     later(open_current_epoch)
     vault.open(False, str(protected))
     check()
-    assert vault.active_revision['epoch'] == 2 and vault.process is not None
+    assert vault.active_revision['epoch'] == start_epoch + 1 and vault.process is not None
     protected.write_bytes(stale)
     try:
         vault.request(action='reveal', site=site)
@@ -405,7 +391,7 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     later(migration_preview)
     vault.import_json()
     check()
-    assert imported_path.read_bytes().startswith(b'KCV2\0')
+    assert imported_path.read_bytes().startswith(b'KCV4\0')
     assert imported_pdf.read_bytes().startswith(b'%PDF')
     assert vault.active_vault_path == str(imported_path) and vault.process is not None
     assert vault.request(action='reveal', site=site)['password'] == secret

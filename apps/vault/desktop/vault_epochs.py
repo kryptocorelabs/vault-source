@@ -65,7 +65,7 @@ def minimum(state, path):
         # Untrusted peek selects a policy only; it never advances the cache.
         with Path(path).open('rb') as file:
             prefix = file.read(29)
-        if len(prefix) == 29 and prefix[:5] == b'KCV3\0':
+        if len(prefix) == 29 and prefix[:5] in (b'KCV3\0', b'KCV4\0'):
             identity = prefix[5:21].hex()
     if identity in state['vaults']:
         return {'vault_id': list(bytes.fromhex(identity)), **state['vaults'][identity]}

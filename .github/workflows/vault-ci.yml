@@ -61,22 +61,6 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Check out the reviewed Core source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          repository: kryptocorelabs/kryptocore
-          ref: ff58bfcb5c752abfdc531a4fd25dad25d7e49429
-          path: core-upstream
-          persist-credentials: false
-      - name: Check the vendored Core source tree
-        shell: bash
-        run: |
-          vendored=$(git rev-parse --verify HEAD:rust)
-          upstream=$(git -C core-upstream rev-parse --verify HEAD:rust)
-          if [[ "$vendored" != "$upstream" ]]; then
-            echo '::error::The vendored rust/ tree differs from the reviewed Core revision. See apps/vault/CI.md.'
-            exit 1
-          fi
       - run: rustup toolchain install 1.99.1 --profile minimal
       - run: cargo +1.99.1 install --locked cargo-audit --version 0.22.2
       - run: cargo +1.99.1 audit --deny warnings

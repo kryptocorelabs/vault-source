@@ -26,8 +26,9 @@ plaintext transport or key store is used on other platforms.
 
 [Security in 30 seconds](https://github.com/kryptocorelabs/kryptocore/blob/main/SECURITY-IN-BRIEF.md) · [Rescue-first guide](https://github.com/kryptocorelabs/kryptocore/blob/main/RESCUE-FIRST.md) · [Verify a download](https://github.com/kryptocorelabs/kryptocore/blob/main/VERIFY-DOWNLOADS.md)
 
-The unreleased [optional epoch profile](EPOCHS.md) creates a KCV3 copy with
-a local rollback warning policy. KCV1/KCV2 defaults and existing files remain unchanged.
+The desktop development build creates [KCV4 vaults](../../modules/vault-format/KCV4.md)
+with a random payload key and a [local rollback warning policy](EPOCHS.md).
+Vault can also make a separate KCV4 copy of a KCV2 or KCV3 vault.
 
 Development builds also provide [JSON migration and Vault status](MIGRATION.md):
 export deliberately, create a new vault with fresh key material, and review
@@ -55,7 +56,7 @@ python apps/vault/desktop/vault.pyw
 
 See [CI and build consistency](CI.md) for tests and exact toolchain details.
 The [shared format reader](../../modules/vault-format/README.md) supports
-KCV1/KCV2 and opt-in KCV3; format/API compatibility changes must be explicit and tested.
+KCV1 through KCV4. Use a KCV4-capable Vault or Rescue for newly created files.
 
 ## Everyday use
 
