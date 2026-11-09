@@ -42,27 +42,25 @@ copies remain readable with the password or emergency sheet that matched them.
 If someone may have read a copy, also change the stored account passwords at
 their services; changing the vault password cannot revoke exposed credentials.
 
-The new unlocked password-change dialog retains the KCV2/KCV3 seed and existing
-sheet by default. Its optional re-key mode generates a fresh seed and a replacement
-sheet. This is separate from resetting through a recovery credential below.
+The unlocked password-change dialog retains the KCV2–KCV4 seed and existing
+sheet by default. Select the re-key option to generate a fresh seed and sheet.
+Builds with hardened recovery rotate the seed during emergency reset and keep
+the current sheet valid. Check your version before relying on seed rotation.
+[Compatibility matrix and key lifecycle](FORMAT-LIFECYCLE.md)
 
-The [unreleased recovery hardening](RECOVERY-HARDENING.md) also replaces the
-internal data key while retaining the current emergency sheet. Earlier builds
-kept that key when resetting the password. Keep a verified backup before trying
-an updated build. After a reset, make and test a fresh backup. If the emergency
-sheet itself may be exposed, renew it from the unlocked vault as well; older
-copies still retain their former recovery access.
-
-KCV1/KCV2 cannot detect that an authentic file is an older snapshot. The
-[optional KCV3 profile](EPOCHS.md) adds a local history check with documented
-limits. When restoring a copy, check the expected recent entries.
+After a reset, make and test a fresh backup. If the emergency sheet may have
+been exposed, renew it from the unlocked vault. Older copies retain their
+former recovery access. When restoring a copy, check the expected recent
+entries. KCV3 and KCV4 use [local revision checks](EPOCHS.md) where trusted
+history is available.
 
 ## Move and review a vault — development builds
 
 Use **Settings → Export logins as JSON** for a deliberate plaintext transfer,
-then **Create a new vault from JSON** to use fresh key material, a new password
-and a new emergency sheet. Rescue's JSON array is also accepted. Existing files
-are preserved; protect the unencrypted JSON. See [the migration guide](MIGRATION.md).
+then **Create a new vault from JSON** to create a KCV4 file with fresh key
+material, a new password and a new emergency sheet. The desktop also accepts
+Rescue's JSON array. Keep the old file and protect the unencrypted JSON.
+[Migration guide](MIGRATION.md)
 
 **Status** beside **Lock**, or **Settings → Vault status**, shows entries,
 recovery-slot availability, the last backup recorded here and the filesystem

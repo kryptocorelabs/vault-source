@@ -18,7 +18,7 @@ keep technical details for the private discussion. Include the affected version
 or commit, impact and steps using synthetic data. Never attach real credentials,
 vaults, identities, contact codes or emergency sheets.
 
-Maintainers aim to acknowledge reports, reproduce issues, coordinate disclosure
-and document affected versions, fixes and limits. There is no guaranteed response
-time or bug-bounty payment. Public contributions and private vulnerability
-handling are complementary parts of the same process.
+First-party Vault, the Firefox extension, the Windows native host, and the
+format and release workflows are in scope. See the [Vault threat model](apps/vault/THREAT_MODEL.md)
+for the trust boundaries. The [project response and disclosure policy](https://github.com/kryptocorelabs/kryptocore/blob/main/SECURITY.md#response-and-disclosure)
+defines response targets, private coordination and publication.

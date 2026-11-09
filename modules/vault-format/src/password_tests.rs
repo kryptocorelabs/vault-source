@@ -10,20 +10,28 @@ const DATA: &[u8] =
 
 #[test]
 fn password_slot_change_retains_seed_while_explicit_rotation_replaces_seed_and_recovery() {
-    for epoch in [false, true] {
+    for profile in [2, 3, 4] {
         let directory = tempfile::tempdir().unwrap();
         let source = directory.path().join("source.kcv");
-        create_with_recovery(&source, OLD, REC, DATA).unwrap();
-        let path = if epoch {
-            let path = directory.path().join("versioned.kcv");
-            enable_epoch_copy(&source, &path, OLD).unwrap();
-            path
-        } else {
-            source
+        let path = match profile {
+            4 => {
+                create_with_recovery_v4(&source, OLD, REC, DATA).unwrap();
+                source
+            }
+            3 => {
+                create_with_recovery(&source, OLD, REC, DATA).unwrap();
+                let path = directory.path().join("versioned.kcv");
+                enable_epoch_copy(&source, &path, OLD).unwrap();
+                path
+            }
+            _ => {
+                create_with_recovery(&source, OLD, REC, DATA).unwrap();
+                source
+            }
         };
         let original = read(&path).unwrap();
         let (seed, _) = open_recoverable(&original, OLD, 0).unwrap();
-        let old_key = payload_key(&seed).unwrap();
+        let old_key = profile_payload_key(&original, &seed).unwrap();
         let before = revision(&original);
         let (second, rotated) =
             change_password_with_revision(&path, OLD, NEW, false, None, before).unwrap();
@@ -64,7 +72,7 @@ fn password_slot_change_retains_seed_while_explicit_rotation_replaces_seed_and_r
         assert!(open_with_recovery(&path, REC).is_err());
         assert_eq!(&open_with_recovery(&path, NEXT_REC).unwrap()[..], DATA);
         assert_eq!(&open_bytes(&original, OLD).unwrap()[..], DATA);
-        if epoch {
+        if profile >= 3 {
             assert_eq!(third.unwrap().vault_id, before.unwrap().vault_id);
             assert_eq!(second.unwrap().epoch, 2);
             assert_eq!(third.unwrap().epoch, 3);

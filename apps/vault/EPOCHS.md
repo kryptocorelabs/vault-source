@@ -1,16 +1,9 @@
 # Local rollback warnings
 
-The desktop development build creates KCV4 files with local revision checks.
-With an unlocked KCV2 or KCV3 vault, choose **Einstellungen → Neue KCV4-Kopie
-anlegen**. The copy starts at revision 1 with a fresh vault ID, retains password
-and emergency-sheet access, and becomes the active file. Use a new destination.
-The source stays available as a separate copy. Configure a recovery slot first
-if the source uses KCV1.
-
-**Use KCV4-capable Vault and Rescue builds for that copy.** The currently
-published Rescue preview.3 predates KCV4. Use the newer source for evaluation.
-Keep the original and a tested backup. Browser pairings are unchanged; pending
-browser requests are invalidated when the active file switches to the new copy.
+The current desktop creates KCV4 files with local revision checks. A new KCV4
+file starts at revision 1 with a fresh vault ID. The format lifecycle guide
+lists the builds that can open it and the migration routes for earlier files.
+[Compatibility matrix and migration](FORMAT-LIFECYCLE.md)
 
 ## What gets checked
 

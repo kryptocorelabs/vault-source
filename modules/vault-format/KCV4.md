@@ -24,3 +24,5 @@ with a fresh vault ID. It keeps both existing slots, so the current password
 and emergency sheet still work. A format conversion retains the underlying
 slot secret. Use explicit key rotation for a suspected key exposure. Keep the
 original file and test the new copy before replacing your backup plan.
+
+[Release compatibility and key lifecycle](../../apps/vault/FORMAT-LIFECYCLE.md)

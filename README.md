@@ -30,9 +30,9 @@ and through automated CI. We welcome community testing, code reviews and
 scrutiny of our security assumptions. Report suspected vulnerabilities privately
 through the project's [security-reporting channel](SECURITY.md).
 
-See the [unreleased recovery hardening](apps/vault/RECOVERY-HARDENING.md) and
-[Vault threat model](apps/vault/THREAT_MODEL.md) for seed rotation, old-file access,
-rollback and Python/Qt memory limits. Existing published binaries are unchanged.
+See the [Vault format lifecycle](apps/vault/FORMAT-LIFECYCLE.md) and
+[Vault threat model](apps/vault/THREAT_MODEL.md) for seed rotation, migration,
+browser approval and Python/Qt session memory limits.
 
 The local desktop has [native Linux/macOS build paths](apps/vault/PLATFORMS.md),
 with Intel and Apple Silicon CI packages. Firefox pairing is Windows-only.

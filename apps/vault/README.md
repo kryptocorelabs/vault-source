@@ -97,10 +97,13 @@ when updating; **Firefox trennen** revokes the pairing.
 The popup offers matching credentials for the current HTTPS origin. A saved
 host such as `www.otto.de` also matches `https://www.otto.de` when the host
 and port agree. An explicitly saved HTTPS entry takes precedence if both
-forms exist. Use **Login ausfüllen**, inspect the fields and submit the form
-yourself. On split username/password pages, invoke filling on the appropriate
-step. Ambiguous forms can need a focused field or manual transfer. Unsupported or unsafe forms
-are rejected rather than filled speculatively.
+forms exist. In a build with desktop approval, choose **Login ausfüllen**,
+then open **Firefox · Anfrage** in Vault. Verify the address, choose **Einmal
+freigeben**, and retry the same action in Firefox within 30 seconds. The
+unchanged 0.1.16 XPI shows its generic fill error on the first click. The
+desktop indicates when it has an approval request. Inspect the filled fields
+and submit the form yourself. Split username/password steps can each need
+their own approval. Ambiguous forms can need a focused field or manual transfer.
 
 Global HTTPS form detection is optional and initially disabled. Site assistance
 requires a separate opt-in for the exact origin, including its port. It can
@@ -108,11 +111,11 @@ offer page actions for filling or opening a new Vault entry. Eligible save offer
 require explicit confirmation; their session and navigation checks remain in
 force. `Alt+Shift+K` opens the extension popup.
 
-Vault and Firefox authenticate/encrypt each request with a fresh Noise session.
-The helper relays ciphertext. Windows DPAPI protects Vault's pairing key; Firefox
-stores its key through Web Crypto. The browser, unlocked processes and Windows
-account are trust boundaries. A page can read credentials inserted into its own
-fields. Signing is not a claim of absolute security or an independent audit.
+Vault and Firefox authenticate and encrypt each request with a fresh Noise
+session. The helper relays ciphertext through a pipe scoped to the Windows
+user and session. Vault protects its pairing key with Windows DPAPI. Firefox
+stores its key through Web Crypto. See the [Vault threat model](THREAT_MODEL.md)
+for the same-user process boundary and the lifetime of a fill approval.
 
 Chrome and Edge are planned separately. The old loopback prototype manifest is
 not a supported browser port. See [browser support](BROWSERS.md).

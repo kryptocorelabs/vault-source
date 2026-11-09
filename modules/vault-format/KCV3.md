@@ -1,4 +1,4 @@
-# KCV3 epoch profile — unreleased
+# KCV3 compatibility profile
 
 This opt-in application format is separate from the minimal Core. Existing
 KCV1/KCV2 interpretation and default creation are unchanged. Older readers

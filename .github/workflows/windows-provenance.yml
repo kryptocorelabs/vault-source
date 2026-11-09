@@ -74,7 +74,10 @@ jobs:
           & $python -m pip install --only-binary=:all: --require-hashes -r $lock
           if ($LASTEXITCODE -ne 0) { throw 'Installing the locked packaging wheels failed.' }
           & ./apps/vault/package-windows-onefile.ps1 -PythonExe $python -OutputDirectory $output -WorkDirectory (Join-Path $build 'work')
+          & $python apps/vault/package-windows-preview.py --version 0.1.0-preview.4 --output $output --work (Join-Path $build 'preview-work')
+          if ($LASTEXITCODE -ne 0) { throw 'The extracted Windows preview failed its recovery workflow.' }
           $file = Get-Item -LiteralPath (Join-Path $output 'KryptoCore-Vault-Portable.exe')
+          $archive = Get-Item -LiteralPath (Join-Path $output 'KryptoCore-Vault-0.1.0-preview.4-windows-x64-desktop.zip')
           @{
             source_commit = (git rev-parse HEAD)
             rustc = ((rustc -vV) -join "`n")
@@ -87,12 +90,18 @@ jobs:
             name = $file.Name
             size = $file.Length
             sha256 = (Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant()
-          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'BUILD.json') -Encoding utf8
+            preview = @{
+              name = $archive.Name
+              size = $archive.Length
+              sha256 = (Get-FileHash -LiteralPath $archive.FullName).Hash.ToLowerInvariant()
+            }
+          } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $output 'BUILD.json') -Encoding utf8
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: vault-windows-build-${{ matrix.copy }}
           path: |
             ${{ runner.temp }}/vault-${{ matrix.copy }}/artifacts/KryptoCore-Vault-Portable.exe
+            ${{ runner.temp }}/vault-${{ matrix.copy }}/artifacts/KryptoCore-Vault-*-windows-x64-desktop.zip
             ${{ runner.temp }}/vault-${{ matrix.copy }}/artifacts/BUILD.json
           if-no-files-found: error
 
@@ -108,26 +117,42 @@ jobs:
         with:
           pattern: vault-windows-build-*
           path: builds
-      - name: Validate the build records and compare exact executable bytes
+      - name: Compare the standalone EXE and desktop preview ZIP
         shell: bash
         run: |
           file=KryptoCore-Vault-Portable.exe
+          archive=KryptoCore-Vault-0.1.0-preview.4-windows-x64-desktop.zip
           for copy in first second; do
             dir="builds/vault-windows-build-$copy"
             digest=$(sha256sum "$dir/$file" | cut -d ' ' -f 1)
             size=$(stat -c '%s' "$dir/$file")
             jq -e --arg commit "$GITHUB_SHA" --arg file "$file" --arg sha "$digest" --argjson size "$size" \
               '.source_commit == $commit and .name == $file and .sha256 == $sha and .size == $size' "$dir/BUILD.json"
+            digest=$(sha256sum "$dir/$archive" | cut -d ' ' -f 1)
+            size=$(stat -c '%s' "$dir/$archive")
+            jq -e --arg file "$archive" --arg sha "$digest" --argjson size "$size" \
+              '.preview.name == $file and .preview.sha256 == $sha and .preview.size == $size' "$dir/BUILD.json"
           done
           cmp "builds/vault-windows-build-first/$file" "builds/vault-windows-build-second/$file"
+          cmp "builds/vault-windows-build-first/$archive" "builds/vault-windows-build-second/$archive"
           mkdir verified
           cp "builds/vault-windows-build-first/$file" verified/
+          cp "builds/vault-windows-build-first/$archive" verified/
           cp builds/vault-windows-build-first/BUILD.json verified/BUILD-FIRST.json
           cp builds/vault-windows-build-second/BUILD.json verified/BUILD-SECOND.json
-          (cd verified && sha256sum "$file" > SHA256SUMS.txt)
+          (cd verified && sha256sum "$file" "$archive" > SHA256SUMS.txt)
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          subject-path: verified/KryptoCore-Vault-Portable.exe
+          subject-path: |
+            verified/KryptoCore-Vault-Portable.exe
+            verified/KryptoCore-Vault-*-windows-x64-desktop.zip
+      - name: Verify the ZIP attestation against the source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify verified/KryptoCore-Vault-*-windows-x64-desktop.zip \
+            --repo "$GITHUB_REPOSITORY" --source-digest "$GITHUB_SHA" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/windows-provenance.yml"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: vault-windows-verified-${{ github.sha }}

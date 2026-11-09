@@ -21,17 +21,17 @@ This crate is maintained with the open-source application workspaces. It is not 
 public encryption primitive or a replacement format. No general recovery key,
 back door or bypass is provided.
 
-## Optional epoch profile
+## Revision profiles
 
 [KCV3](KCV3.md) is the earlier epoch profile with authenticated ID/epoch and
 caller-supplied freshness minima. KCV4 uses the same revision checks. Rescue
 can authenticate a copy for recovery without claiming backup freshness.
 
-`open_with_metadata` returns format/recovery facts from the same authenticated
-bytes as the plaintext. `create_with_recovery` atomically creates a complete
-KCV2 vault with a fresh seed and fresh slots; it never imports old keys or
-overwrites an existing destination. JSON transfer validation and the UI live
-in Vault, outside the minimal Core.
+`open_with_metadata` returns format and recovery facts from the same authenticated
+bytes as the plaintext. The current desktop uses `create_with_recovery_v4` for
+new vaults and imports. `create_with_recovery` serves KCV2 compatibility. Both
+create a fresh seed and slots, using a new destination. JSON transfer validation
+and the UI live in Vault. [Format lifecycle and writer policy](../../apps/vault/FORMAT-LIFECYCLE.md)
 
 `change_password_with_revision` adds an unlocked change without altering format
 interpretation. Its default retains the existing payload secret and recovery slot. Explicit
@@ -55,7 +55,7 @@ encoding for new formats.
 
 ## Recovery reset boundary
 
-In the unreleased recovery hardening, `reset_password` authenticates the source
+The hardened `reset_password` authenticates the source
 and parses the login records before creating a fresh random 32-byte seed.
 Both slots wrap the new seed with fresh salts/nonces, using the new password
 and the existing recovery secret. The payload is encrypted under the new key,
@@ -63,9 +63,10 @@ with the complete new header as AAD, then atomically replaces the selected file.
 KCV2 bytes, readers and recovery-secret compatibility remain unchanged.
 
 Earlier resets retained the seed. Ordinary `save` still retains it. Rekeying
-protects updated files from a key recovered from a pre-reset snapshot; it cannot
-revoke that snapshot or any plaintext already disclosed. A current recovery
-secret still opens the updated file. Complete-file rollback is not detected.
+protects updated files from a key recovered from a pre-reset snapshot. The old
+snapshot keeps its old access. A current recovery secret still opens the updated
+file. Freshness checks require a trusted local revision floor for KCV3 or KCV4.
+[Key lifecycle by format](../../apps/vault/FORMAT-LIFECYCLE.md#key-lifecycle-by-format)
 
 KCV2 and KCV3 retain the fixed Argon2id payload derivation and `KCV2 payload key`
 salt for compatibility. KCV4 imports the authenticated random 32-byte slot

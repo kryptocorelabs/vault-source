@@ -59,24 +59,38 @@ concurrently used native pointers are outside the ABI contract.
 
 ### Local processes under the Vault Windows account
 
-The named pipe is scoped to the Windows user. Vault stores its channel key
-under that user's DPAPI protection, so a process running as the same user can
-typically decrypt the stored key. Firefox stores a Web Crypto HMAC key that
+The named pipe uses Qt's same-user access control. Vault also requires Windows
+to report the same logon session for the client and Vault processes, and
+rejects a connection if it cannot verify that session. This check does not
+identify the client as Firefox. Vault stores its channel key under that
+user's DPAPI protection and bounds the file size before decryption. A process
+running as the same user can typically decrypt the stored key. Firefox stores a Web Crypto HMAC key that
 cannot be exported through the Web Crypto API. Code controlling the extension
 can still use it to derive the channel key. Treat access to the Firefox profile
 or control of the browser process as a compromise of this boundary.
+[Qt named-pipe access](https://doc.qt.io/qt-6/qlocalserver.html#SocketOption-enum),
+[Windows pipe sessions](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientsessionid),
 [Windows DPAPI](https://learn.microsoft.com/en-us/windows/desktop/api/Dpapi/nf-dpapi-cryptprotectdata)
-and [Web Crypto key storage](https://www.w3.org/TR/WebCryptoAPI/#concepts-key-storage)
-describe the underlying protection.
+and [Web Crypto key storage](https://www.w3.org/TR/WebCryptoAPI/#concepts-key-storage).
 
 A process with the channel key can authenticate to the pipe as a paired
 client and supply its own target origin. Vault matches that origin to its
-records and relies on Firefox to verify the active tab and document. While
-Vault is unlocked, such a client can retrieve credentials for a known matching
-origin through the popup `fill` operation in either mode, without a separate
-desktop prompt. Standard mode also permits `fill_page` and session-bound
-`save`. Locking Vault denies further retrieval while locked. Disconnecting
-Firefox revokes the pairing.
+records and relies on Firefox to verify the active tab and document. Pairing
+authenticates the channel. Unlocking the vault lets a paired client request an
+approval, and passive lookup reveals only whether the origin has an entry.
+Both popup fill and in-page fill require a separate approval from the desktop.
+The desktop displays the exact origin without credentials. An approval can be
+used once, for the same origin and fill operation in the same unlocked session,
+within 30 seconds. Pending requests expire after 30 seconds. Locking, changing
+the pairing or changing the security mode discards the pending approval.
+Standard mode also permits session-bound `save`. Strict mode permits popup
+fill after approval and keeps in-page fill and browser save disabled.
+
+The retry uses the existing v5 protocol. Any process with the pairing key that
+can connect in the same Windows session could race Firefox for an approved
+retry for that exact origin and action. A compromised Firefox process can also
+read an authorized fill. An unapproved request cannot fetch credentials.
+Disconnect Firefox to revoke the pairing. Re-pair only with a trusted profile.
 
 ## Persistence and recovery
 
@@ -111,6 +125,6 @@ rollback detector, identity proof or malware scan.
   requirement must be reflected in every normal unlock route. Test loss,
   replacement and offline recovery before adopting a format or policy.
 
-See [security policy](SECURITY.md), [usage](USAGE.md),
+See [security policy](SECURITY.md), [usage](USAGE.md), [format and key lifecycle](FORMAT-LIFECYCLE.md),
 [recovery hardening](RECOVERY-HARDENING.md) and the
 [Core threat model](https://github.com/kryptocorelabs/kryptocore/blob/main/THREAT_MODEL.md).

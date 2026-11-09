@@ -1,5 +1,6 @@
 """Frameless Qt desktop for the local Rust Vault session."""
 
+from dataclasses import dataclass, replace
 from html import escape
 import ctypes
 from ctypes import wintypes
@@ -24,6 +25,8 @@ ROOT = None if getattr(sys, 'frozen', False) else HERE.parents[2]
 VAULT_IDLE_SECONDS = {'standard': 300, 'strict': 60}
 FIREFOX_PIPE = 'kryptocorelabs-vault-firefox-v5'
 FIREFOX_PAIR_SECONDS = 120
+FIREFOX_FILL_SECONDS = 30
+FIREFOX_PAIR_FILE_LIMIT = 4096
 FIREFOX_KEY_CONTEXT = b'KryptoCore Vault Firefox v5 channel key'
 FIREFOX_REQUEST_LIMIT = 12 * 1024
 FIREFOX_LOGIN_LIMIT = 4096
@@ -177,6 +180,22 @@ def firefox_key_dpapi(data, *, protect):
         if output_blob.data:
             ctypes.memset(output_blob.data, 0, output_blob.size)
             free(output_blob.data)
+
+
+def firefox_pipe_client_in_session(descriptor):
+    kernel = ctypes.windll.kernel32
+    process_session = kernel.ProcessIdToSessionId
+    process_session.argtypes = (wintypes.DWORD, ctypes.POINTER(wintypes.DWORD))
+    process_session.restype = wintypes.BOOL
+    pipe_session = kernel.GetNamedPipeClientSessionId
+    pipe_session.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    pipe_session.restype = wintypes.BOOL
+    local, remote = wintypes.DWORD(), wintypes.DWORD()
+    return (
+        process_session(os.getpid(), ctypes.byref(local))
+        and pipe_session(descriptor, ctypes.byref(remote))
+        and local.value == remote.value
+    )
 
 
 def write_local_file(path, data):
@@ -448,6 +467,15 @@ class Panel(W.QDialog):
         return submit
 
 
+@dataclass(frozen=True)
+class FirefoxFillAccess:
+    site: str
+    action: str
+    epoch: str
+    expires_at: float
+    approved: bool = False
+
+
 class Vault(W.QWidget):
     def __init__(self):
         super().__init__(None, C.Qt.Window | C.Qt.FramelessWindowHint)
@@ -487,6 +515,7 @@ class Vault(W.QWidget):
         self.firefox_pair_until = 0
         self.firefox_candidate = None
         self.firefox_epoch = secrets.token_hex(16)
+        self.firefox_fill_access = None
         self.firefox_seen = 0
         self.firefox_error = ''
         self.firefox_lock = None
@@ -732,7 +761,6 @@ class Vault(W.QWidget):
             except VaultError as error:
                 dialog.error.setText(str(error))
                 return
-            self.firefox_epoch = secrets.token_hex(16)
             self.cancel_firefox_requests()
             self.hide_detail_password()
             dialog.accept()
@@ -976,7 +1004,6 @@ class Vault(W.QWidget):
                 dialog.error.setText(str(error))
                 return
             dialog.accept()
-            self.firefox_epoch = secrets.token_hex(16)
             self.cancel_firefox_requests()
             self.show_library(path)
             self.status.setText('KCV4-Kopie geöffnet · Versionsvergleich aktiv.')
@@ -1054,8 +1081,15 @@ class Vault(W.QWidget):
         pairing_code.setAccessibleName('Firefox-Verbindungscode')
         dialog.layout.addWidget(intro)
         dialog.layout.addWidget(pairing_code)
+        requested_site = label('', 'welcomeIntro')
+        requested_site.setTextFormat(C.Qt.PlainText)
+        requested_site.setWordWrap(True)
+        dialog.layout.addWidget(requested_site)
+        displayed_access = None
 
         def refresh_view():
+            nonlocal displayed_access
+            displayed_access = self.active_firefox_fill()
             pending = self.firefox_candidate is not None and time.monotonic() < self.firefox_pair_until
             pairing_code.setVisible(pending)
             if not pending:
@@ -1063,6 +1097,11 @@ class Vault(W.QWidget):
             generate.setVisible(not pending and self.process is not None and not self.firefox_error)
             disconnect.setVisible(self.firefox_key is not None)
             retry.setVisible(bool(self.firefox_error))
+            requested_site.setVisible(displayed_access is not None)
+            approve.setVisible(displayed_access is not None and not displayed_access.approved)
+            deny.setVisible(displayed_access is not None)
+            deny.setText('Freigabe widerrufen' if displayed_access and displayed_access.approved else 'Anfrage ablehnen')
+            requested_site.setText(displayed_access.site if displayed_access else '')
             if pending:
                 intro.setText('Kopiere den Code ins Vault-Add-on in Firefox. Er gilt zwei Minuten und nur einmal.')
             elif self.firefox_error:
@@ -1071,8 +1110,16 @@ class Vault(W.QWidget):
                 intro.setText('Entsperre deinen Tresor, um Firefox zu nutzen.')
             elif self.firefox_key is None:
                 intro.setText('Erstelle einen Verbindungscode und füge ihn im Vault-Add-on in Firefox ein.')
+            elif displayed_access is None:
+                intro.setText('Firefox ist gekoppelt. Fordere einen Login in Firefox an und bestätige die Anfrage hier.')
             else:
-                intro.setText('Firefox ist eingerichtet. Auf einer Login-Seite kannst du direkt aus dem Add-on ausfüllen.')
+                retry_hint = ('im Add-on erneut auf „Login ausfüllen“'
+                              if displayed_access.action == 'fill'
+                              else 'auf der Seite erneut auf die Vault-Ausfüllschaltfläche')
+                if displayed_access.approved:
+                    intro.setText(f'Einmal freigegeben. Wechsle zurück zu Firefox und klicke innerhalb von 30 Sekunden {retry_hint}.')
+                else:
+                    intro.setText(f'Prüfe die angefragte Adresse. Nach der Freigabe klickst du in Firefox {retry_hint}.')
 
         def retry_firefox():
             self.setup_firefox()
@@ -1082,6 +1129,7 @@ class Vault(W.QWidget):
         def generate_code():
             if self.process is None or time.monotonic() >= self.deadline:
                 return
+            self.invalidate_firefox_session()
             self.firefox_candidate = secrets.token_bytes(32)
             self.firefox_pair_until = time.monotonic() + FIREFOX_PAIR_SECONDS
             pairing_code.setText(self.firefox_candidate.hex())
@@ -1102,6 +1150,20 @@ class Vault(W.QWidget):
             dialog.error.clear()
             refresh_view()
 
+        def decide_fill(approve_request):
+            access = self.active_firefox_fill()
+            if access is not None and access is displayed_access:
+                self.firefox_fill_access = (
+                    replace(access, approved=True, expires_at=time.monotonic() + FIREFOX_FILL_SECONDS)
+                    if approve_request and not access.approved else None
+                )
+                self.update_firefox_status()
+            refresh_view()
+
+        approve = button('Einmal freigeben', lambda: decide_fill(True), 'primary')
+        deny = button('Anfrage ablehnen', lambda: decide_fill(False))
+        approve.setAutoDefault(False)
+        dialog.layout.addLayout(row(deny, approve))
         generate = button('Verbindungscode erstellen', generate_code, 'primary')
         disconnect = button('Firefox trennen', disconnect_firefox)
         retry = button('Erneut versuchen', retry_firefox)
@@ -1143,9 +1205,12 @@ class Vault(W.QWidget):
             self.firefox_error = ''
             if self.firefox_key_path.is_file():
                 try:
-                    key = firefox_key_dpapi(self.firefox_key_path.read_bytes(), protect=False)
-                    if len(key) == 32:
-                        self.firefox_key = key
+                    with self.firefox_key_path.open('rb') as record:
+                        protected = record.read(FIREFOX_PAIR_FILE_LIMIT + 1)
+                    if 0 < len(protected) <= FIREFOX_PAIR_FILE_LIMIT:
+                        key = firefox_key_dpapi(protected, protect=False)
+                        if len(key) == 32:
+                            self.firefox_key = key
                 except OSError:
                     self.firefox_key = None
         except (KeyError, OSError, VaultError) as error:
@@ -1157,6 +1222,7 @@ class Vault(W.QWidget):
 
     def update_firefox_status(self):
         now = time.monotonic()
+        access = self.active_firefox_fill()
         if self.firefox_candidate is not None and now >= self.firefox_pair_until:
             self.firefox_candidate = None
         if self.firefox_error:
@@ -1167,13 +1233,15 @@ class Vault(W.QWidget):
             state = 'Code bereit'
         elif self.firefox_key is None:
             state = 'Einrichten'
+        elif access is not None:
+            state = 'Freigabe bereit' if access.approved else 'Anfrage'
         elif self.firefox_seen and now - self.firefox_seen < 10:
             state = 'Verbunden'
         else:
-            state = 'Bereit'
+            state = 'Gekoppelt'
         self.firefox_indicator.setText(f'Firefox · {state}')
         self.firefox_indicator.setToolTip(self.firefox_error or 'Firefox-Verbindung verwalten')
-        active = state in ('Bereit', 'Verbunden')
+        active = state in ('Verbunden', 'Anfrage', 'Freigabe bereit')
         if self.firefox_indicator.property('active') != active:
             self.firefox_indicator.setProperty('active', active)
             self.firefox_indicator.style().unpolish(self.firefox_indicator)
@@ -1263,7 +1331,7 @@ class Vault(W.QWidget):
 
     def set_vault_mode(self, mode):
         self.vault_mode = mode
-        self.firefox_epoch = secrets.token_hex(16)
+        self.cancel_firefox_requests()
         self.preferences.setValue('vault/mode', mode)
         if mode == 'strict':
             self.last_vault_path = ''
@@ -1362,7 +1430,11 @@ class Vault(W.QWidget):
 
     def eventFilter(self, watched, event):
         if event.type() in (C.QEvent.KeyPress, C.QEvent.MouseButtonPress):
-            self.deadline = time.monotonic() + VAULT_IDLE_SECONDS[self.vault_mode]
+            now = time.monotonic()
+            if self.process is not None and now >= self.deadline:
+                self.lock()
+                return True
+            self.deadline = now + VAULT_IDLE_SECONDS[self.vault_mode]
         return super().eventFilter(watched, event)
 
     def check_idle(self):
@@ -1409,6 +1481,7 @@ class Vault(W.QWidget):
 
     def stop_session(self):
         process, self.process = self.process, None
+        self.firefox_fill_access = None
         if process is None:
             return
         try:
@@ -1421,7 +1494,6 @@ class Vault(W.QWidget):
             process.stdout.close()
 
     def lock(self):
-        self.firefox_epoch = secrets.token_hex(16)
         self.cancel_firefox_requests()
         for dialog in reversed(self.findChildren(W.QDialog)):
             if dialog.isVisible():
@@ -1835,7 +1907,20 @@ class Vault(W.QWidget):
         self.reveal_button.setText('Verbergen')
         self.reveal_timer.start()
 
+    def invalidate_firefox_session(self):
+        self.firefox_epoch = secrets.token_hex(16)
+        self.firefox_fill_access = None
+
+    def active_firefox_fill(self):
+        access = self.firefox_fill_access
+        if access is not None and (
+                self.process is None or self.firefox_key is None or access.epoch != self.firefox_epoch
+                or time.monotonic() >= min(self.deadline, access.expires_at)):
+            self.firefox_fill_access = None
+        return self.firefox_fill_access
+
     def cancel_firefox_requests(self):
+        self.invalidate_firefox_session()
         self.firefox_candidate = None
         self.firefox_pair_until = 0
         self.firefox_seen = 0
@@ -1846,7 +1931,7 @@ class Vault(W.QWidget):
         while self.firefox_server.hasPendingConnections():
             socket = self.firefox_server.nextPendingConnection()
             socket.setReadBufferSize(FIREFOX_REQUEST_LIMIT + 4)
-            if len(self.firefox_clients) >= 4:
+            if len(self.firefox_clients) >= 4 or not firefox_pipe_client_in_session(socket.socketDescriptor()):
                 socket.abort()
                 socket.deleteLater()
                 continue
@@ -1939,11 +2024,12 @@ class Vault(W.QWidget):
                 self.firefox_key = session_key
                 self.firefox_candidate = None
                 self.firefox_pair_until = 0
-                self.firefox_epoch = secrets.token_hex(16)
+                self.invalidate_firefox_session()
                 reply = {'code': 'paired', 'key': browser_secret.hex()}
         elif key is not self.firefox_key:
             reply = {'code': 'pair_required'}
         elif locked:
+            self.firefox_fill_access = None
             reply = {'code': 'locked'}
         elif action == 'status':
             reply = {
@@ -1987,12 +2073,24 @@ class Vault(W.QWidget):
             host = site.removeprefix('https://')
             entry = next((entry for entry in self.entries if entry['origin'] == host), None)
         if action == 'lookup':
-            return {'code': 'login_found', 'username': entry['username']} if entry else {'code': 'no_login'}
+            return {'code': 'login_found'} if entry else {'code': 'no_login'}
         if action in ('fill', 'fill_page'):
             if action == 'fill_page' and self.vault_mode == 'strict':
                 return {'code': 'direct_fill_disabled'}
             if entry is None:
                 return {'code': 'no_login'}
+            access = self.active_firefox_fill()
+            if access is None:
+                self.firefox_fill_access = FirefoxFillAccess(
+                    site, action, self.firefox_epoch, time.monotonic() + FIREFOX_FILL_SECONDS
+                )
+                W.QApplication.alert(self, 5000)
+                return {'code': 'approval_required'}
+            if (access.site, access.action) != (site, action):
+                return {'code': 'approval_busy'}
+            if not access.approved:
+                return {'code': 'approval_required'}
+            self.firefox_fill_access = None
             return {**self.firefox_login(entry, site), 'session': self.firefox_epoch}
         if action == 'new_login':
             if entry is not None:

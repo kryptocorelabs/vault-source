@@ -14,6 +14,13 @@ and persistence after restart passed with Firefox 159.0.1 in a disposable
 profile. These checks do not replace full desktop/browser workflow testing.
 Windows Authenticode signing and independent audit remain separate.
 
+Desktop builds with fill approval can use the published 0.1.16 XPI and an
+existing compatible pairing. The first click in Firefox requests approval and
+the XPI displays its generic fill error. In Vault, open **Firefox · Anfrage**,
+check the origin and select **Einmal freigeben**. Retry the same fill action
+within 30 seconds. Use `tests/firefox-release-e2e.py --require-fill-approval`
+with the exact desktop EXE and the signed XPI to check this workflow.
+
 ## Submit future packages
 
 1. Submit the Firefox ZIP in the [Mozilla Add-ons Developer Hub](https://addons.mozilla.org/developers/addon/submit/distribution).
@@ -100,8 +107,10 @@ Please use synthetic credentials.
 2. In Vault select **Firefox → Verbindungscode erstellen**. Paste the code
    into the extension and select **Firefox verbinden**. The extension shows
    **Mit Vault verbunden**.
-3. Open the saved site. In the extension click **Login ausfüllen** and check
-   that the matching fields are filled. The extension never submits the form.
+3. Open the saved site. In the extension click **Login ausfüllen**. If the
+   desktop requires approval, approve the matching request in Vault and click
+   **Login ausfüllen** again. Verify the fields are filled and the form stays
+   unsubmitted.
 4. Lock Vault and try again. The extension should ask you to open or unlock
    Vault without filling the form.
 5. Unlock Vault. Turn on detection for all HTTPS sites in the popup and grant
@@ -114,8 +123,10 @@ Please use synthetic credentials.
    submit a standard sign-in form with synthetic credentials. Click
    **Vault · Login speichern?** and confirm **Speichern** in the Firefox popup.
 7. Reopen the sign-in page and use **Ausfüllen** next to the green indicator.
-   Verify that the fields are filled and that the form stays unsubmitted.
-   In **Streng** mode, use the popup to fill and Vault to save new entries.
+   If the desktop requires approval, approve the request and click the same
+   in-page action again. Verify that the fields are filled and that the form
+   stays unsubmitted. In **Streng** mode, use the popup to fill and Vault to
+   save new entries.
 
 Opening the extension on a recognized sign-in form sends the active HTTPS
 origin to Vault through the encrypted local channel. Filling retrieves

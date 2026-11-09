@@ -530,21 +530,61 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
 
     vault.firefox_key = bytes(range(32))
 
-    def browser_reply(action, target, data=None):
+    def browser_reply(action, target, data=None, key=None):
         request = json.dumps({'action': action, 'site': target, 'data': data,
                               'session': vault.firefox_epoch}).encode()
-        frame = vault.firefox_secure_reply(FixtureChannel(), False, vault.firefox_key, request)
+        frame = vault.firefox_secure_reply(FixtureChannel(), False, key if key is not None else vault.firefox_key, request)
         return json.loads(bytes.fromhex(frame['m']))
+
+    def decide_fill(site, *, allow=True):
+        if os.name != 'nt':
+            access = vault.active_firefox_fill()
+            assert access.site == site and not access.approved
+            vault.firefox_fill_access = ui.replace(access, approved=True) if allow else None
+            return
+
+        def decide():
+            panel = app.activeModalWidget()
+            assert any(item.isVisible() and item.text() == site and item.textFormat() == ui.C.Qt.PlainText
+                       for item in panel.findChildren(ui.W.QLabel))
+            click(panel, 'Einmal freigeben' if allow else 'Anfrage ablehnen')
+            if allow:
+                assert any('erneut' in item.text() for item in panel.findChildren(ui.W.QLabel))
+            click(panel, 'Schließen')
+
+        later(decide)
+        vault.firefox_panel()
+        check()
 
     host = 'bare.example.invalid:8443'
     target = f'https://{host}'
     vault.entries = vault.request(action='put', site='Bare.Example.Invalid:8443/login',
                                   username=username, password=secret)['entries']
     assert any(entry['origin'] == host for entry in vault.entries)
-    assert browser_reply('lookup', target) == {'code': 'login_found', 'username': username}
+    assert browser_reply('lookup', target) == {'code': 'login_found'}
     expected_fill = {'origin': target, 'username': username, 'password': secret,
                      'session': vault.firefox_epoch}
+    assert browser_reply('fill', target) == {'code': 'approval_required'}
+    assert vault.dialog is None
+    first = vault.firefox_fill_access
+    assert browser_reply('fill', target) == {'code': 'approval_required'}
+    assert vault.firefox_fill_access is first
+    vault.firefox_fill_access = ui.replace(first, expires_at=time.monotonic() - 1)
+    assert browser_reply('fill', target) == {'code': 'approval_required'}
+    assert vault.firefox_fill_access is not first
+    assert browser_reply('fill_page', target) == {'code': 'approval_busy'}
+    assert browser_reply('fill', target, key=bytes(32)) == {'code': 'pair_required'}
+    other = 'https://other.example.invalid'
+    vault.entries = vault.request(action='put', site=other, username=username, password=secret)['entries']
+    decide_fill(target)
+    assert browser_reply('fill_page', target) == {'code': 'approval_busy'}
+    assert browser_reply('fill', other) == {'code': 'approval_busy'}
     assert browser_reply('fill', target) == expected_fill
+    assert browser_reply('fill', target) == {'code': 'approval_required'}
+    decide_fill(target, allow=False)
+    assert vault.firefox_fill_access is None
+    assert browser_reply('fill_page', target) == {'code': 'approval_required'}
+    decide_fill(target)
     assert browser_reply('fill_page', target) == expected_fill
     assert browser_reply('new_login', target) == {'code': 'exists'}
     assert browser_reply('save', target, {'username': username, 'password': secret}) == {'code': 'exists'}
@@ -566,14 +606,53 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
 
     explicit_secret = 'Synthetic explicit HTTPS password'
     vault.entries = vault.request(action='put', site=target, username=username, password=explicit_secret)['entries']
+    assert browser_reply('fill', target) == {'code': 'approval_required'}
+    decide_fill(target)
+    vault.firefox_fill_access = ui.replace(vault.firefox_fill_access, expires_at=time.monotonic() - 1)
+    assert browser_reply('fill', target) == {'code': 'approval_required'}
+    decide_fill(target)
     assert browser_reply('fill', target) == {**expected_fill, 'password': explicit_secret}
     assert vault.request(action='reveal', site=host)['password'] == secret
-    print('Firefox bridge: bare host fill and exact port, scheme and host checks passed.')
-
+    assert browser_reply('fill', target) == {'code': 'approval_required'}
+    decide_fill(target)
+    vault.set_vault_mode('strict')
+    assert vault.firefox_fill_access is None
+    assert browser_reply('fill_page', target) == {'code': 'direct_fill_disabled'}
+    assert browser_reply('fill', target) == {'code': 'approval_required'}
+    decide_fill(target)
+    old_key = vault.firefox_key
+    vault.firefox_key = bytes(reversed(range(32)))
+    vault.cancel_firefox_requests()
+    assert browser_reply('fill', target, key=old_key) == {'code': 'pair_required'}
+    assert browser_reply('fill', target) == {'code': 'approval_required'}
+    decide_fill(target)
+    old_epoch = vault.firefox_epoch
     if os.name != 'nt':
         vault.application_state_changed(ui.C.Qt.ApplicationInactive)
+    else:
+        vault.deadline = time.monotonic() - 1
+        assert vault.eventFilter(vault, ui.C.QEvent(ui.C.QEvent.KeyPress))
+    assert vault.firefox_fill_access is None and vault.firefox_epoch != old_epoch
+    assert browser_reply('fill', target) == {'code': 'locked'}
+    print('Firefox bridge: exact origin, explicit one-use approval, denial, expiry, key change and lock passed.')
+
+    if os.name != 'nt':
         assert vault.process is None and not vault.entries
         assert vault.firefox_indicator.isHidden()
         assert folder.joinpath('KryptoCoreLabs/Vault').stat().st_mode & 0o777 == 0o700
+    else:
+        server = ui.N.QLocalServer()
+        server.setSocketOptions(ui.N.QLocalServer.UserAccessOption)
+        name = 'kcv-test-session-' + folder.name
+        assert server.listen(name), server.errorString()
+        client = ui.N.QLocalSocket()
+        client.connectToServer(name)
+        assert client.waitForConnected(2000), client.errorString()
+        assert server.hasPendingConnections() or server.waitForNewConnection(2000)
+        peer = server.nextPendingConnection()
+        assert ui.firefox_pipe_client_in_session(peer.socketDescriptor())
+        assert not ui.firefox_pipe_client_in_session(-1)
+        client.abort()
+        server.close()
     vault.close()
     print('PASS: recovery/epochs, migration/health, password/key rotation, real replacement sheet, file digests and no-clobber references; originals preserved.')

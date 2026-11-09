@@ -6,6 +6,16 @@ const NEW_PASSWORD: &[u8] = b"new synthetic vault password";
 const DATA: &[u8] =
     br#"[{"origin":"https://example.invalid","username":"alice","password":"synthetic"}]"#;
 
+fn decrypt_direct_payload(file: &[u8], key: &Key) -> Result<Zeroizing<Vec<u8>>, kryptocore::Error> {
+    let nonce = file[EPOCH_AAD_LEN..EPOCH_AAD_LEN + 24].try_into().unwrap();
+    decrypt(
+        key,
+        nonce,
+        &file[EPOCH_AAD_LEN + 24..],
+        &file[..EPOCH_AAD_LEN],
+    )
+}
+
 #[test]
 fn version_four_uses_direct_payload_key_and_preserves_recovery_on_reset() {
     let folder = tempfile::tempdir().unwrap();
@@ -16,19 +26,7 @@ fn version_four_uses_direct_payload_key_and_preserves_recovery_on_reset() {
     assert!(original.starts_with(DIRECT_KEY_HEADER));
     let (seed, _) = open_recoverable(&original, PASSWORD, 0).unwrap();
     let key = Key::from_bytes(seed.as_slice().try_into().unwrap());
-    let nonce = original[EPOCH_AAD_LEN..EPOCH_AAD_LEN + 24]
-        .try_into()
-        .unwrap();
-    assert_eq!(
-        &decrypt(
-            &key,
-            nonce,
-            &original[EPOCH_AAD_LEN + 24..],
-            &original[..EPOCH_AAD_LEN]
-        )
-        .unwrap()[..],
-        DATA
-    );
+    assert_eq!(&decrypt_direct_payload(&original, &key).unwrap()[..], DATA);
     let mut changed = original.clone();
     changed[3] = b'3';
     assert!(open_bytes(&changed, PASSWORD).is_err());
@@ -47,6 +45,45 @@ fn version_four_uses_direct_payload_key_and_preserves_recovery_on_reset() {
     assert!(changed.starts_with(DIRECT_KEY_HEADER));
     let (new_seed, _) = open_recoverable(&changed, NEW_PASSWORD, 0).unwrap();
     assert!(seed[..] != new_seed[..]);
+    assert!(decrypt_direct_payload(&changed, &key).is_err());
+    assert!(open(&path, PASSWORD).is_err());
+    assert_eq!(&open_with_recovery(&path, RECOVERY).unwrap()[..], DATA);
+    let fourth = save_with_revision(&path, NEW_PASSWORD, DATA, false, third)
+        .unwrap()
+        .unwrap();
+    assert_eq!(fourth.epoch, 4);
+    assert!(decrypt_direct_payload(&read(&path).unwrap(), &key).is_err());
+    assert_eq!(&open_bytes(&original, PASSWORD).unwrap()[..], DATA);
+}
+
+#[test]
+fn version_four_rejects_a_stale_snapshot_before_rotating_or_copying() {
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("direct.kcv");
+    let first = create_with_recovery_v4(&path, PASSWORD, RECOVERY, DATA).unwrap();
+    let stale = read(&path).unwrap();
+    let floor = save_with_revision(&path, PASSWORD, DATA, false, Some(first)).unwrap();
+    std::fs::write(&path, &stale).unwrap();
+
+    assert!(matches!(
+        reset_password_with_revision(&path, RECOVERY, NEW_PASSWORD, floor),
+        Err(REVISION_REJECTED)
+    ));
+    assert!(matches!(
+        enable_recovery_with_revision(&path, PASSWORD, b"replacement sheet", false, floor),
+        Err(REVISION_REJECTED)
+    ));
+    assert!(matches!(
+        change_password_with_revision(&path, PASSWORD, NEW_PASSWORD, false, None, floor),
+        Err(REVISION_REJECTED)
+    ));
+    let backup = folder.path().join("backup.kcv");
+    assert!(matches!(
+        backup_with_revision(&path, &backup, PASSWORD, floor),
+        Err(REVISION_REJECTED)
+    ));
+    assert!(!backup.exists());
+    assert_eq!(read(&path).unwrap(), stale);
     assert_eq!(&open_with_recovery(&path, RECOVERY).unwrap()[..], DATA);
 }
 

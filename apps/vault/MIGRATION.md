@@ -1,7 +1,8 @@
 # Move to a new vault and check its state
 
-These features are in development source and current evaluation builds. Older
-published downloads may not include them. Keep tested encrypted backups.
+Check your desktop and Rescue builds in the [format compatibility
+matrix](FORMAT-LIFECYCLE.md#which-builds-can-open-a-vault). For the encrypted
+KCV2 or KCV3 copy workflow, see [Migrate one active vault](FORMAT-LIFECYCLE.md#migrate-one-active-vault).
 
 ## Export and create a fresh vault
 
@@ -15,9 +16,9 @@ published downloads may not include them. Keep tested encrypted backups.
    choose a new `.kcv` file, a new password and save the new emergency-sheet PDF.
    Continuing locks an open source session. Cancellation preserves the source;
    the normal inactivity/focus/session lock policy still applies.
-5. Vault creates the complete new KCV2 file with a freshly generated random seed,
-   fresh password/recovery wrapping and a fresh payload nonce. It opens the new
-   vault. Check the logins, make an encrypted backup and test recovery on a copy.
+5. The current desktop creates and opens a KCV4 vault with a fresh random
+   payload key, password and recovery wrapping, and payload nonce. Check the
+   logins, make an encrypted backup and test recovery on a copy.
 6. Protect and remove the plaintext transfer file when it is no longer needed.
    Deletion does not guarantee erasure from SSDs, snapshots, sync or backups.
 
@@ -28,10 +29,8 @@ generates a new emergency credential. Old snapshots and disclosed site passwords
 remain sensitive; migration cannot revoke them. Rotate passwords at the affected
 services if they may have been exposed.
 
-The new file uses the existing KCV2 profile, readable by compatible older readers
-and Rescue. A KCV3 source does not carry over its identity/history. You can then
-enable the [optional KCV3 copy](EPOCHS.md) for the new vault. Existing formats,
-Core cryptography and default creation have not been reinterpreted.
+The new file starts its own authenticated revision history. Use KCV4-capable
+Vault and Rescue builds for that copy. [Local revision checks](EPOCHS.md)
 
 For a platform move without a new-key requirement, moving an encrypted `.kcv`
 copy and its separately protected access credential avoids a plaintext export.
@@ -64,13 +63,13 @@ remain scheme-free. Multiple accounts for one stored website are not supported.
 There is no arbitrary third-party CSV or browser-export import in this change.
 
 Input JSON is capped at 16 MiB. Re-serialized login data must fit the existing
-4 MiB KCV2 total-file limit, including its 221-byte overhead. Validation happens
+4 MiB KCV4 total-file limit, including its 245-byte overhead. Validation happens
 before writing a vault. A SHA-256 fingerprint binds the preview to the bytes
 re-read at creation; an intervening edit requires selecting the file again.
 That fingerprint does not authenticate who created an untrusted plaintext export.
 
 Plaintext export needs an unlocked, authenticated session and explicit confirmation.
-Stale KCV3 revisions are rejected before export. The Rust worker writes the JSON
+Stale KCV3 and KCV4 revisions are rejected before export. The Rust worker writes the JSON
 directly to a temporary file in the selected directory and publishes it without
 clobbering. Unix files use mode 0600; Windows files inherit the directory's ACL.
 Linked/reparse output ancestors are rejected; the destination directory must

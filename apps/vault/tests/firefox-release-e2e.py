@@ -141,7 +141,7 @@ def portable(executable, fixture, work):
                         winreg.SetValueEx(key, "", 0, previous[1], previous[0])
 
 
-def test(driver, addon, desktop, window, pid):
+def test(driver, addon, desktop, window, pid, *, require_fill_approval):
     def control(title, kind):
         def find(_):
             for top in desktop.windows(process=pid):
@@ -195,6 +195,16 @@ def test(driver, addon, desktop, window, pid):
     def values():
         return [driver.find_element(By.ID, field).get_property("value") for field in ("user", "pass")]
 
+    def approve_fill():
+        if not require_fill_approval:
+            return
+        popup("doc.querySelector('#status').textContent = ''; doc.querySelector('#request button').click();")
+        state("#status", "Ausfüllen fehlgeschlagen")
+        assert values() == ["", ""]
+        button(window, "Firefox-Verbindung")
+        control("Einmal freigeben", "Button").invoke()
+        control("Schließen", "Button").invoke()
+
     unlock()
     assert driver.install_addon(str(addon), temporary=False) == EXTENSION_ID
     with driver.context("chrome"):
@@ -221,6 +231,7 @@ def test(driver, addon, desktop, window, pid):
     control("Schließen", "Button").invoke()
     print("Mozilla-signed XPI installed permanently and paired with disposable Vault settings.", flush=True)
 
+    approve_fill()
     popup("doc.querySelector('#request button').click();")
     WebDriverWait(driver, 12).until(lambda _: values() == [LOGIN_USER, LOGIN_PASSWORD])
     assert driver.execute_script("return document.body.dataset.submitted") is None
@@ -239,6 +250,7 @@ def test(driver, addon, desktop, window, pid):
     open_popup()
     state("#connection", "Mit Vault verbunden")
     state("#offer", "Gespeicherter Login")
+    approve_fill()
     popup("""doc.querySelector('#request button').click();
         gBrowser.selectedBrowser.loadURI(Services.io.newURI(arguments[0]),
         {triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});""", SITE + "/changed")
@@ -256,6 +268,7 @@ def test(driver, addon, desktop, window, pid):
     open_popup()
     state("#connection", "Mit Vault verbunden")
     state("#offer", "Gespeicherter Login")
+    approve_fill()
     popup("""doc.querySelector('#request button').click();
         gBrowser.selectedTab = Array.from(gBrowser.tabs).find(tab =>
             tab.linkedBrowser.currentURI.spec.endsWith('/other-tab'));""")
@@ -273,15 +286,18 @@ def test(driver, addon, desktop, window, pid):
     unlock()
     state("#connection", "Mit Vault verbunden")
     state("#offer", "Gespeicherter Login")
+    approve_fill()
     popup("doc.querySelector('#request button').click();")
     WebDriverWait(driver, 12).until(lambda _: values() == [LOGIN_USER, LOGIN_PASSWORD])
-    print("Lock blocked access, and unlock restored autofill with the same pairing.", flush=True)
+    print("Lock blocked access, and the same pairing worked after unlock and any required approval.", flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("vault", "addon", "fixture", "firefox", "geckodriver"):
         parser.add_argument(f"--{name}", type=lambda p: Path(p).resolve(), required=True)
+    parser.add_argument("--require-fill-approval", action="store_true",
+                        help="Require the first fill to wait for one-use approval in the desktop.")
     args = parser.parse_args()
     print(f"Vault SHA-256 {sha256(args.vault.read_bytes()).hexdigest()}", flush=True)
     print(f"XPI SHA-256 {sha256(args.addon.read_bytes()).hexdigest()}", flush=True)
@@ -298,7 +314,8 @@ def main():
             with webdriver.Firefox(service=Service(str(args.geckodriver), service_args=["--allow-system-access"]),
                                    options=options) as driver:
                 print(f"Firefox {driver.capabilities['browserVersion']}", flush=True)
-                test(driver, args.addon, desktop, window, pid)
+                test(driver, args.addon, desktop, window, pid,
+                     require_fill_approval=args.require_fill_approval)
 
 
 if __name__ == "__main__":

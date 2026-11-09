@@ -1,9 +1,8 @@
-# Recovery re-key review — unreleased
+# Recovery re-key review, 8 November 2026
 
-Review date: 2026-11-08. This is a targeted maintainer review, not an independent
-audit. Existing published release assets have not been replaced. The changes
-described here apply to the accompanying source and explicitly identified local
-builds; older RC.2 binaries may retain the original reset behavior.
+This is the historical maintainer review of the recovery reset change. Use the
+[current compatibility matrix and key lifecycle](FORMAT-LIFECYCLE.md) to identify
+which public downloads include the fix.
 
 ## Confirmed finding
 
@@ -53,16 +52,13 @@ reduces exposure but cannot guarantee erasure of Python/Qt-managed copies.
 - Desktop workflow exercises recovery of a disposable backup, unchanged original
   copies, the user-visible warnings and cleanup of password/recovery fields.
 
-## Remaining work and limits
+## Limits at the time of review
 
-Old copies and exposed service credentials cannot be revoked by re-keying.
-Complete-file rollback is not detected. Python/Qt/JSON can retain secret copies.
-Argon2id on the random seed remains a compatibility/performance cost; moving to
-HKDF needs an explicitly versioned format and migration rather than a silent
-KCV2 change. See [RFC 5869](https://www.rfc-editor.org/rfc/rfc5869.html) and
-[RFC 9106](https://www.rfc-editor.org/rfc/rfc9106.html) for the distinct KDF roles.
-An independent audit of Core, format and channel, Windows Authenticode signing,
-and clean-machine testing of exact release artifacts remain release work.
+The reviewed KCV2 profile had no authenticated revision. Old snapshots kept
+their matching credentials, and Python/Qt/JSON could retain secret copies.
+The original Argon2id payload derivation remains part of the KCV2 compatibility
+profile. See the [current threat model](THREAT_MODEL.md) and
+[KCV4 payload profile](../../modules/vault-format/KCV4.md).
 
 ## Local validation
 

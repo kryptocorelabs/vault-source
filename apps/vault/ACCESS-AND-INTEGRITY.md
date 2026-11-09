@@ -1,7 +1,7 @@
 # Password changes, key rotation and file checksums
 
-These features are in development source and evaluation builds. Existing
-published releases may not contain them; identify the exact source/build.
+See the [compatibility matrix and key lifecycle](FORMAT-LIFECYCLE.md) for exact
+build support and the effects on active files and older copies.
 
 ## Change an unlocked vault's password
 
@@ -9,13 +9,10 @@ Choose **Einstellungen → Tresorpasswort ändern** (Settings → Change vault
 password). Re-enter the current password, choose a different new password of
 at least 15 characters and confirm it. The local strength estimate is guidance.
 
-For KCV2/KCV3 the switch **Neuen Tresorschlüssel erzeugen** (Generate a new
-vault key) is **off by default**:
-
-| Mode | Current file | Recovery sheet | Earlier copies |
-| --- | --- | --- | --- |
-| Password only | Fresh password wrapping and payload nonce; same payload seed | Existing sheet stays valid | Their matching credentials still work; an extracted old seed also remains useful against the current file until the seed is rotated |
-| Explicit re-key | Fresh random payload seed, both fresh wrapping slots and fresh nonce | GUI generates a new credential and requires a new PDF before committing | Copies retain their old access; their old seed cannot decrypt the re-keyed current payload |
+For KCV2–KCV4 the switch **Neuen Tresorschlüssel erzeugen** (Generate a new
+vault key) is off by default. Turn it on to rotate the payload seed and create
+a replacement emergency sheet. KCV1 always derives a fresh payload key and
+its dialog shows re-keying as required. [Key lifecycle by format](FORMAT-LIFECYCLE.md#key-lifecycle-by-format)
 
 The re-key sheet becomes valid only after the password change succeeds. Until
 then the existing file/credentials remain authoritative. Keep old credentials
@@ -27,20 +24,13 @@ or change stored account passwords at their services. If those passwords were
 exposed, rotate them at the services too. Old copies and their matching access
 credentials remain sensitive.
 
-KCV1 has no separate wrapped seed or recovery slot. Changing its password always
-derives a fresh key with a fresh salt, retaining KCV1 compatibility. Its GUI switch
-is therefore checked/disabled and explains the behavior. Configure a recovery
-sheet separately if you want to move that legacy file to the recovery profile.
+**Wiederherstellen** (Recover) and **Notfallblatt einrichten oder erneuern**
+(Enable or renew emergency sheet) follow their own credential rules.
+[Key lifecycle by format](FORMAT-LIFECYCLE.md#key-lifecycle-by-format)
 
-This is separate from **Recovery reset**: resetting through an emergency
-credential continues to rotate the seed unconditionally while preserving that
-credential. Enabling/renewing recovery also rotates the seed; the current
-password stays the same and the GUI saves a fresh emergency credential.
-
-KCV3 retains its vault ID and advances its authenticated epoch on a successful
-password change. Stale revisions and counter overflow are rejected before
-replacement. KCV1/KCV2/KCV3 interpretation, Core primitives and KDF parameters
-are unchanged. The worker changes its session password only after a successful
+KCV3 and KCV4 retain their vault ID and advance the authenticated revision after
+a successful password change. Stale revisions and counter overflow are rejected before
+replacement. The worker changes its session password only after a successful
 atomic write. GUI success invalidates pending browser requests; persistent v5
 pairings remain. Cancellation and rejected authentication/validation do not
 replace source data. If a local history-cache update fails after a committed
@@ -60,7 +50,7 @@ use the matching new credentials; see the [local-history limits](EPOCHS.md).
 
 With a vault unlocked choose **Einstellungen → Datei-Prüfwert (SHA-256)**,
 or the same action in **Status**. Vault authenticates and validates a bounded
-snapshot, checks its remembered KCV3 minimum where applicable and hashes the
+snapshot, checks its remembered KCV3/KCV4 minimum where applicable and hashes the
 **exact encrypted bytes** of that snapshot. No plaintext or key is hashed/exported
 by this action. Ordinary AEAD checking remains in place; a checksum is additional
 reference information.
