@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: '3.13.18'
+          python-version: '3.13.17'
           architecture: x64
       - run: rustup toolchain install 1.99.1-x86_64-pc-windows-msvc --profile minimal
       - name: Build and smoke-test the standalone Vault executable
@@ -51,8 +51,8 @@ jobs:
             $name, $value = $line -split '=', 2
             if ($name -and $null -ne $value) { [Environment]::SetEnvironmentVariable($name, $value, 'Process') }
           }
-          $linker = Get-Command link.exe -CommandType Application
-          $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = $linker.Source
+          $linker = Get-Item -LiteralPath (Join-Path $env:VCToolsInstallDir 'bin/Hostx64/x64/link.exe')
+          $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = $linker.FullName
           $env:SOURCE_DATE_EPOCH = git show -s --format=%ct HEAD
           if ($LASTEXITCODE -ne 0) { throw 'Cannot read the source commit timestamp.' }
           $build = Join-Path $env:RUNNER_TEMP "vault-$env:BUILD_COPY"
@@ -79,7 +79,7 @@ jobs:
             source_commit = (git rev-parse HEAD)
             rustc = ((rustc -vV) -join "`n")
             python = (& $python -V)
-            msvc_linker = $linker.FileVersionInfo.FileVersion
+            msvc_linker = $linker.VersionInfo.FileVersion
             windows_sdk = $env:WindowsSDKVersion
             runner_image = $env:ImageVersion
             cargo_lock_sha256 = (Get-FileHash -LiteralPath Cargo.lock).Hash.ToLowerInvariant()
