@@ -42,6 +42,11 @@ build records and verify its GitHub attestation with
 `gh attestation verify KryptoCore-Vault-Portable.exe -R kryptocorelabs/vault-source`.
 Existing preview ZIPs have their own release evidence.
 
+The same workflow independently builds and verifies the
+[Windows desktop preview.4 ZIP](https://github.com/kryptocorelabs/vault/releases/tag/v0.1.0-preview.4).
+Its setup uses separate, replaceable Python and Qt dependencies. Check the
+attestation for the ZIP's exact bytes when downloading that package.
+
 This is a local packaging preview. Before distributing a build publicly,
 review the bundled dependencies and their notices, Qt library replacement
 and matching source delivery, and Windows code signing. See the existing

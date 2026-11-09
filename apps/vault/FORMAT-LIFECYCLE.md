@@ -13,6 +13,7 @@ identify the build you installed.
 
 | Build | Opens | New desktop files | Seed rotation on emergency reset |
 | --- | --- | --- | --- |
+| [Public Windows Vault 0.1.0-preview.4](https://github.com/kryptocorelabs/vault/releases/tag/v0.1.0-preview.4) | KCV1–KCV4 | KCV4 | KCV2–KCV4. KCV1 has no emergency credential. |
 | Public Windows Vault previews through `0.1.0-preview.3` | KCV1/KCV2, according to the preview's release notes | Legacy profiles | Treat these previews as pre-hardening. |
 | Vault built from the current source | KCV1–KCV4 | KCV4 | KCV2–KCV4. KCV1 has no emergency credential. |
 | Public Rescue `0.1.0-preview.3` | KCV1/KCV2 | Read-only Vault recovery | Exports authenticated records to a separate destination. |

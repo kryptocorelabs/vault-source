@@ -1,4 +1,4 @@
-# KryptoCore Vault 0.1.0-rc.2
+# KryptoCore Vault desktop source
 
 Local password manager with a cross-platform Qt desktop interface, Rust CLI and Firefox
 companion. Vault and its extension are open source under the workspace's MIT
@@ -16,9 +16,10 @@ We welcome community testing, code reviews and scrutiny of our security
 assumptions. Please use synthetic data and report suspected vulnerabilities
 privately through the project's security-reporting channel.
 
-The unreleased [recovery hardening](RECOVERY-HARDENING.md) rotates the payload
-seed on password reset. Existing published binaries may retain the old behavior.
-See [Vault's threat model](THREAT_MODEL.md) for snapshot, rollback and memory limits.
+The [Windows preview.4 release](https://github.com/kryptocorelabs/vault/releases/tag/v0.1.0-preview.4)
+rotates the payload seed on emergency reset for KCV2–KCV4. See the
+[format lifecycle](FORMAT-LIFECYCLE.md) for version and snapshot behavior and
+[Vault's threat model](THREAT_MODEL.md) for rollback and memory limits.
 
 See [desktop platforms](PLATFORMS.md) for native Linux and macOS build/test
 instructions and limitations. Firefox pairing remains Windows-only; no alternate
