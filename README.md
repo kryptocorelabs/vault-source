@@ -1,27 +1,34 @@
 # KryptoCore Vault and Firefox source
 
+Vault is an open-source password manager for people who want to keep their
+logins on their own device. The desktop app stores them in an encrypted file
+and works offline without an account or cloud service.
+
+**Development preview.** Try it with test data. An independent security audit
+is pending.
+
+[Try the Windows preview](https://github.com/kryptocorelabs/vault#try-the-desktop-preview) · [Build from source](#build-and-test) · [Give feedback](https://github.com/kryptocorelabs/vault/issues)
+
 [Security in 30 seconds](SECURITY-IN-BRIEF.md) · [Recover without the main app](RESCUE-FIRST.md) · [Check a download](VERIFY-DOWNLOADS.md)
 
 [![Vault CI](https://github.com/kryptocorelabs/vault-source/actions/workflows/vault-ci.yml/badge.svg)](https://github.com/kryptocorelabs/vault-source/actions/workflows/vault-ci.yml)
 [MIT](LICENSE) · [Contribute](CONTRIBUTING.md) · [Security](SECURITY.md) · [Project charter](https://github.com/kryptocorelabs/kryptocore/blob/main/PROJECT_CHARTER.md)
 
-Open-source Qt Vault application, Firefox extension and their shared native
-channel. First-party code is MIT licensed. Dependencies, including Qt, retain
-their own licenses and distribution requirements. See
+This repository contains the Qt desktop app, Firefox extension and their
+shared native channel. First-party code is MIT licensed. Dependencies,
+including Qt, retain their own licenses and distribution requirements. See
 [third-party notices](THIRD_PARTY_NOTICES.md).
 
-[Downloads and user guide](https://github.com/kryptocorelabs/vault) remain in the
-separate Vault repository. The Core's canonical upstream is
-[kryptocore](https://github.com/kryptocorelabs/kryptocore); this workspace includes
+The Core's canonical upstream is
+[kryptocore](https://github.com/kryptocorelabs/kryptocore). This workspace includes
 its MIT-licensed implementation and the shared Vault format reader so contributors
 can build and test the complete application. MSG, Container and Rescue are in
 [apps-source](https://github.com/kryptocorelabs/apps-source).
 
 Testing to date has been carried out by the KryptoCoreLabs maintainers, locally
-and through automated CI. No independent security audit has been completed.
-We welcome community testing, code reviews and scrutiny of our security
-assumptions. Please use synthetic data and report suspected vulnerabilities
-privately through the project's security-reporting channel.
+and through automated CI. We welcome community testing, code reviews and
+scrutiny of our security assumptions. Report suspected vulnerabilities privately
+through the project's [security-reporting channel](SECURITY.md).
 
 See the [unreleased recovery hardening](apps/vault/RECOVERY-HARDENING.md) and
 [Vault threat model](apps/vault/THREAT_MODEL.md) for seed rotation, old-file access,
@@ -59,7 +66,8 @@ End users of the single-file application do not install these development tools.
 - [Browser support and roadmap](apps/vault/BROWSERS.md)
 - [Firefox signing and verification](apps/vault/FIREFOX_RELEASE.md)
 
-Vault remains a preview without an independent audit. Firefox 0.1.16 is Mozilla-
-signed; that does not certify Vault or replace an audit. Use synthetic data in
-tests. Keep actual vaults, emergency sheets, pairing data and signing credentials
-out of source control and public issue attachments.
+The published Firefox 0.1.16 add-on carries a Mozilla signature for browser
+installation. Use the [Vault threat model](apps/vault/THREAT_MODEL.md) to assess
+the application's security boundaries. Keep actual vaults, emergency sheets,
+pairing data and signing credentials out of source control and public issue
+attachments.
