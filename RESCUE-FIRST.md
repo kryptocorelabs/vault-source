@@ -22,13 +22,13 @@ readers, not an independent cryptographic implementation or a bypass.
    and your backups. If a file looks damaged, keep it rather than overwriting it.
 2. Open **KryptoCore-Rescue.exe** on a trusted Windows computer. Choose
    **Datei auswählen …** (Choose file) and select the working copy.
-3. Choose **Passwort** (Password). For KCV2/KCV3, you may instead select
+3. Choose **Passwort** (Password). For KCV2–KCV4, you may instead select
    **Wiederherstellungsschlüssel** (Recovery key) and enter the matching key
    from your emergency sheet. KCV1 does not have that recovery slot.
 4. Choose **Speicherort wählen …** (Choose destination) and a new local JSON
    file in a protected, preferably encrypted location. Confirm the plaintext
    warning, then choose **Entschlüsseln und exportieren** (Decrypt and export).
-5. In a current development Vault build, choose **Aus JSON-Export umziehen**
+5. In Vault preview.4, choose **Aus JSON-Export umziehen**
    (Move from JSON export), select the Rescue JSON and create a new vault with
    a new password and emergency sheet. Its payload seed is freshly generated.
    See [migration instructions](https://github.com/kryptocorelabs/vault/blob/main/MIGRATION.md).
@@ -41,9 +41,8 @@ refuses to overwrite an existing destination. A recognized file marker alone
 is not successful authentication. If export fails, keep the source untouched
 and try another known-good backup copy with its matching credentials.
 
-KCV3 requires the unreleased KCV3-capable Rescue build; the published preview.3
-download does not support it. Rescue intentionally accepts authentic older backups
-and does not enforce the separate Vault GUI high-water mark.
+Rescue preview.4 reads KCV1–KCV4. Preview.3 reads KCV1 and KCV2.
+Rescue accepts authentic older backups. The Vault GUI tracks its own revision floor.
 
 ## Container: get your files out
 

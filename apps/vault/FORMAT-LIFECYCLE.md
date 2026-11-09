@@ -17,7 +17,7 @@ identify the build you installed.
 | Public Windows Vault previews through `0.1.0-preview.3` | KCV1/KCV2, according to the preview's release notes | Legacy profiles | Treat these previews as pre-hardening. |
 | Vault built from the current source | KCV1–KCV4 | KCV4 | KCV2–KCV4. KCV1 has no emergency credential. |
 | Public Rescue `0.1.0-preview.3` | KCV1/KCV2 | Read-only Vault recovery | Exports authenticated records to a separate destination. |
-| Rescue with the KCV4-capable reader | KCV1–KCV4 | Read-only Vault recovery | Exports authenticated records to a separate destination. |
+| [Public Rescue 0.1.0-preview.4](https://github.com/kryptocorelabs/rescue/releases/tag/v0.1.0-preview.4) | KCV1–KCV4 | Read-only Vault recovery | Exports authenticated records to a separate destination. |
 
 Vault desktop handles the `.kcv` file and emergency password reset. The
 Firefox extension has its own release version.
