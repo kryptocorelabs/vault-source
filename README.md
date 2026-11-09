@@ -19,10 +19,9 @@ shared native channel. First-party code is MIT licensed. Dependencies,
 including Qt, retain their own licenses and distribution requirements. See
 [third-party notices](THIRD_PARTY_NOTICES.md).
 
-The Core's canonical upstream is
-[kryptocore](https://github.com/kryptocorelabs/kryptocore). This workspace includes
-a [reviewed Core snapshot](apps/vault/CI.md#vendored-core-source) and the shared
-Vault format reader so contributors can build and test the complete application.
+This workspace uses the public [KryptoCore crate](https://github.com/kryptocorelabs/kryptocore)
+at a [reviewed Git revision](apps/vault/CI.md#pinned-core-source). The shared
+Vault format crate lives here and Rescue consumes it from an exact Git revision.
 MSG, Container and Rescue are in
 [apps-source](https://github.com/kryptocorelabs/apps-source).
 

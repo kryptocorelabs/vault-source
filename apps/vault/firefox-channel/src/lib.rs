@@ -1,4 +1,7 @@
 //! Bounded buffer interface shared by the Vault DLL and Firefox WebAssembly.
+//! Raw pointers and the WASM randomness import are confined to the ABI layer.
+
+#![deny(unsafe_op_in_unsafe_fn)]
 
 use snow::{Builder, HandshakeState, TransportState};
 use zeroize::Zeroize;
@@ -24,17 +27,22 @@ pub extern "C" fn vault_channel_new() -> *mut Channel {
 }
 
 /// # Safety
-/// The handle must be live and exclusively owned by the caller.
+/// The handle must be live and exclusively owned by the caller. The returned
+/// pointer addresses `BUFFER_SIZE` bytes. Access it only between ABI calls and
+/// stop using it before freeing the channel.
 #[no_mangle]
 pub unsafe extern "C" fn vault_channel_buffer(channel: *mut Channel) -> *mut u8 {
-    (*channel).buffer.as_mut_ptr()
+    // SAFETY: The caller supplies a live, exclusively owned channel.
+    unsafe { (&mut *channel).buffer.as_mut_ptr() }
 }
 
 /// # Safety
-/// The handle must come from `vault_channel_new` and may be freed only once.
+/// The handle must come from `vault_channel_new`, with no live buffer access,
+/// and may be freed only once.
 #[no_mangle]
 pub unsafe extern "C" fn vault_channel_free(channel: *mut Channel) {
-    let mut channel = Box::from_raw(channel);
+    // SAFETY: The caller returns the unique pointer produced by Box::into_raw.
+    let mut channel = unsafe { Box::from_raw(channel) };
     channel.buffer.zeroize();
 }
 
@@ -47,7 +55,8 @@ pub unsafe extern "C" fn vault_channel_start(
     initiator: u32,
     pairing: u32,
 ) -> i32 {
-    let channel = &mut *channel;
+    // SAFETY: The caller owns a live handle and has finished writing its buffer.
+    let channel = unsafe { &mut *channel };
     let mut key = [0; 32];
     key.copy_from_slice(&channel.buffer[..32]);
     channel.buffer.zeroize();
@@ -65,7 +74,8 @@ pub unsafe extern "C" fn vault_channel_step(
     operation: u32,
     len: usize,
 ) -> i32 {
-    let channel = &mut *channel;
+    // SAFETY: The caller owns a live handle and has finished writing its buffer.
+    let channel = unsafe { &mut *channel };
     let mut input = [0; BUFFER_SIZE];
     let result = if len <= BUFFER_SIZE {
         input[..len].copy_from_slice(&channel.buffer[..len]);
@@ -149,7 +159,9 @@ unsafe extern "Rust" fn __getrandom_v03_custom(
     extern "C" {
         fn vault_random(destination: *mut u8, len: usize);
     }
-    vault_random(destination, len);
+    // SAFETY: getrandom supplies the writable range. The browser import fills
+    // exactly that range in this instance's linear memory or aborts the call.
+    unsafe { vault_random(destination, len) };
     Ok(())
 }
 

@@ -30,6 +30,17 @@ XPI. The AMO adapter checks payload equivalence and the expected add-on ID and
 version. Firefox establishes trust in the browser signature separately. See the
 [release verification procedure](FIREFOX_RELEASE.md#signing-hand-off-and-release-verification).
 
+### Native and WebAssembly channel ABI
+
+The [channel ABI](firefox-channel/src/lib.rs) uses unsafe Rust only where it
+dereferences or frees an opaque channel handle and where it invokes the
+WebAssembly host's randomness import. The native caller and Firefox wrapper
+own the handle. They access the 16 KiB buffer between calls, copy output before
+reuse, and release the handle once. Inputs over the buffer limit invalidate the
+channel. Noise state and payload processing use safe Rust slices. The WASM host
+fills the requested memory range with Web Crypto randomness. Untrusted or
+concurrently used native pointers are outside the ABI contract.
+
 ## Attacker capabilities and limits
 
 | Scenario | Protection and remaining responsibility |
