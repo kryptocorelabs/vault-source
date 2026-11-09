@@ -5,6 +5,28 @@ repository. Use `publishing/vault-source/` as the local checkout for Vault
 changes and CI runs. The public `kryptocorelabs/vault` repository hosts
 release notes and downloads.
 
+## Vendored Core source
+
+Vault and `modules/vault-format` depend on this workspace's root `kryptocore`
+crate. Its `rust/` tree comes from [Core commit `ff58bfc`](https://github.com/kryptocorelabs/kryptocore/tree/ff58bfcb5c752abfdc531a4fd25dad25d7e49429/rust).
+The dependency job checks out that exact revision and compares Git tree IDs.
+Vault keeps its own workspace manifest and lockfile. The check covers the Rust
+source tree, while the dependency audit checks Vault's locked graph.
+
+The snapshot includes zeroization of the Argon2 work buffer. Upstream added
+recoverable allocation errors, nonce and salt helpers, checked decryption,
+contextual key wrapping and optional streaming after this pin. A source match
+establishes provenance for the chosen revision. Upstream fixes still require
+an explicit refresh.
+
+To refresh, review the upstream changes and copy the complete `rust/` tree from
+an exact Core commit. Update the workflow pin, this reference and the relevant
+crate dependencies and lockfile. Run the Vault format and worker tests and the
+Rescue interoperability check below before merging. Recovery slots use the
+[versioned Vault format](../../modules/vault-format/README.md#recovery-slots).
+
+## Test coverage
+
 The Vault workflow runs on pushes, pull requests, manual dispatches and a
 weekly schedule. It checks KCV2/KCV3 tampering and truncation, write failures,
 recovery seed rotation, rejection of keys recovered from old snapshots,

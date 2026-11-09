@@ -39,6 +39,16 @@ unconditionally. `verified_snapshot` exposes only authenticated ciphertext bytes
 for backups/checksums; SHA-256 remains an application concern, outside this crate
 and the minimal Core.
 
+## Recovery slots
+
+KCV2 generates a random 32-byte seed. Each password or recovery slot stores a
+salt, a nonce and the seed encrypted under a key derived from that slot's
+credential and salt. The slot authenticates the `KCV2` marker, a zero byte and
+the slot role as associated data. On open, Core's `decrypt` authenticates the
+slot and returns the seed. `derive_key` constructs the opaque payload key using
+the fixed KCV2 profile below. Core's generic wrapping profile has its own AAD
+encoding for new formats.
+
 ## Recovery reset boundary
 
 In the unreleased recovery hardening, `reset_password` authenticates the source

@@ -21,8 +21,9 @@ including Qt, retain their own licenses and distribution requirements. See
 
 The Core's canonical upstream is
 [kryptocore](https://github.com/kryptocorelabs/kryptocore). This workspace includes
-its MIT-licensed implementation and the shared Vault format reader so contributors
-can build and test the complete application. MSG, Container and Rescue are in
+a [reviewed Core snapshot](apps/vault/CI.md#vendored-core-source) and the shared
+Vault format reader so contributors can build and test the complete application.
+MSG, Container and Rescue are in
 [apps-source](https://github.com/kryptocorelabs/apps-source).
 
 Testing to date has been carried out by the KryptoCoreLabs maintainers, locally
