@@ -522,6 +522,54 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     check()
     assert vault.request(action='reveal', site=site)['password'] == secret
     assert imported_path.read_bytes() == final_bytes and protected.read_bytes() == current
+
+    class FixtureChannel:
+        # Exercise decrypted requests and replies. Separate tests cover Noise framing.
+        def step(self, _operation, data):
+            return data
+
+    vault.firefox_key = bytes(range(32))
+
+    def browser_reply(action, target, data=None):
+        request = json.dumps({'action': action, 'site': target, 'data': data,
+                              'session': vault.firefox_epoch}).encode()
+        frame = vault.firefox_secure_reply(FixtureChannel(), False, vault.firefox_key, request)
+        return json.loads(bytes.fromhex(frame['m']))
+
+    host = 'bare.example.invalid:8443'
+    target = f'https://{host}'
+    vault.entries = vault.request(action='put', site='Bare.Example.Invalid:8443/login',
+                                  username=username, password=secret)['entries']
+    assert any(entry['origin'] == host for entry in vault.entries)
+    assert browser_reply('lookup', target) == {'code': 'login_found', 'username': username}
+    expected_fill = {'origin': target, 'username': username, 'password': secret,
+                     'session': vault.firefox_epoch}
+    assert browser_reply('fill', target) == expected_fill
+    assert browser_reply('fill_page', target) == expected_fill
+    assert browser_reply('new_login', target) == {'code': 'exists'}
+    assert browser_reply('save', target, {'username': username, 'password': secret}) == {'code': 'exists'}
+
+    vault.entries = vault.request(action='put', site='http://legacy.example.invalid',
+                                  username=username, password=secret)['entries']
+    for other_origin in ('https://bare.example.invalid', 'https://bare.example.invalid:8444',
+                         'https://bare.example.invalid.attacker.invalid:8443',
+                         'https://sub.bare.example.invalid:8443', 'https://legacy.example.invalid'):
+        assert browser_reply('fill', other_origin) == {'code': 'no_login'}
+    for invalid_origin in (f'http://{host}', f'{target}/path', 'https://http://legacy.example.invalid',
+                           'https://user@bare.example.invalid:8443', f'{target}#fragment'):
+        try:
+            browser_reply('fill', invalid_origin)
+        except ui.ChannelError:
+            pass
+        else:
+            raise AssertionError(f'Invalid browser origin accepted: {invalid_origin}')
+
+    explicit_secret = 'Synthetic explicit HTTPS password'
+    vault.entries = vault.request(action='put', site=target, username=username, password=explicit_secret)['entries']
+    assert browser_reply('fill', target) == {**expected_fill, 'password': explicit_secret}
+    assert vault.request(action='reveal', site=host)['password'] == secret
+    print('Firefox bridge: bare host fill and exact port, scheme and host checks passed.')
+
     if os.name != 'nt':
         vault.application_state_changed(ui.C.Qt.ApplicationInactive)
         assert vault.process is None and not vault.entries

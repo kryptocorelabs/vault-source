@@ -94,10 +94,12 @@ the trusted extension popup once. The code expires after two minutes and is
 consumed on successful pairing. Existing compatible v5 pairings carry over
 when updating; **Firefox trennen** revokes the pairing.
 
-The popup offers matching credentials for the current HTTPS origin. Use
-**Login ausfüllen**, inspect the fields and submit the form yourself. On split
-username/password pages, invoke filling on the appropriate step. Ambiguous
-forms can need a focused field or manual transfer. Unsupported or unsafe forms
+The popup offers matching credentials for the current HTTPS origin. A saved
+host such as `www.otto.de` also matches `https://www.otto.de` when the host
+and port agree. An explicitly saved HTTPS entry takes precedence if both
+forms exist. Use **Login ausfüllen**, inspect the fields and submit the form
+yourself. On split username/password pages, invoke filling on the appropriate
+step. Ambiguous forms can need a focused field or manual transfer. Unsupported or unsafe forms
 are rejected rather than filled speculatively.
 
 Global HTTPS form detection is optional and initially disabled. Site assistance

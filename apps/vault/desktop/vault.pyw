@@ -1954,7 +1954,10 @@ class Vault(W.QWidget):
         elif action in ('lookup', 'fill', 'fill_page', 'save', 'new_login'):
             site = request.get('site')
             if (not isinstance(site, str) or not site.isascii() or not site.startswith('https://')
-                    or len(site) > 512 or any(ord(char) <= 32 for char in site)):
+                    or len(site) > 512 or any(not 33 <= ord(char) <= 126 for char in site)):
+                raise ChannelError('Invalid HTTPS origin')
+            host = site.removeprefix('https://')
+            if not host or any(char in host for char in '/\\?#@'):
                 raise ChannelError('Invalid HTTPS origin')
             payload = request.get('data')
             if action == 'save' and request.get('session') != epoch:
@@ -1979,6 +1982,10 @@ class Vault(W.QWidget):
 
     def firefox_site_reply(self, action, site, payload):
         entry = next((entry for entry in self.entries if entry['origin'] == site), None)
+        if entry is None:
+            # The Rust worker stores a scheme-less site's canonical host and port.
+            host = site.removeprefix('https://')
+            entry = next((entry for entry in self.entries if entry['origin'] == host), None)
         if action == 'lookup':
             return {'code': 'login_found', 'username': entry['username']} if entry else {'code': 'no_login'}
         if action in ('fill', 'fill_page'):
@@ -1986,7 +1993,7 @@ class Vault(W.QWidget):
                 return {'code': 'direct_fill_disabled'}
             if entry is None:
                 return {'code': 'no_login'}
-            return {**self.firefox_login(entry), 'session': self.firefox_epoch}
+            return {**self.firefox_login(entry, site), 'session': self.firefox_epoch}
         if action == 'new_login':
             if entry is not None:
                 return {'code': 'exists'}
@@ -2020,9 +2027,12 @@ class Vault(W.QWidget):
             return {'code': 'save_failed'}
         return {'code': 'saved'}
 
-    def firefox_login(self, entry):
+    def firefox_login(self, entry, site):
         try:
-            return self.request(action='reveal', site=entry['origin'])
+            login = self.request(action='reveal', site=entry['origin'])
+            if login.get('origin') != entry['origin']:
+                raise VaultError('Der Login hat sich geändert. Fordere ihn erneut an.')
+            return {'origin': site, 'username': login['username'], 'password': login['password']}
         except VaultError as error:
             return {'error': str(error)}
 

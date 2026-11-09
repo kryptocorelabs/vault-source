@@ -57,6 +57,27 @@ concurrently used native pointers are outside the ABI contract.
 | An attacker replaces a file and its recorded hash | SHA-256 comparison needs a separately trusted baseline. It is not sender authentication, a signature or malware detection. |
 | An export is stolen or imported from an untrusted sender | JSON has no encryption or origin authentication. It exposes every transferred login. A fresh vault seed protects future ciphertext, not this plaintext or the sender's claims. |
 
+### Local processes under the Vault Windows account
+
+The named pipe is scoped to the Windows user. Vault stores its channel key
+under that user's DPAPI protection, so a process running as the same user can
+typically decrypt the stored key. Firefox stores a Web Crypto HMAC key that
+cannot be exported through the Web Crypto API. Code controlling the extension
+can still use it to derive the channel key. Treat access to the Firefox profile
+or control of the browser process as a compromise of this boundary.
+[Windows DPAPI](https://learn.microsoft.com/en-us/windows/desktop/api/Dpapi/nf-dpapi-cryptprotectdata)
+and [Web Crypto key storage](https://www.w3.org/TR/WebCryptoAPI/#concepts-key-storage)
+describe the underlying protection.
+
+A process with the channel key can authenticate to the pipe as a paired
+client and supply its own target origin. Vault matches that origin to its
+records and relies on Firefox to verify the active tab and document. While
+Vault is unlocked, such a client can retrieve credentials for a known matching
+origin through the popup `fill` operation in either mode, without a separate
+desktop prompt. Standard mode also permits `fill_page` and session-bound
+`save`. Locking Vault denies further retrieval while locked. Disconnecting
+Firefox revokes the pairing.
+
 ## Persistence and recovery
 
 Normal saves retain the seed and choose a fresh payload nonce. Recovery reset

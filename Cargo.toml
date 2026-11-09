@@ -3,4 +3,4 @@ members = ["apps/vault", "apps/vault/firefox-channel", "modules/vault-format"]
 resolver = "2"
 
 [workspace.dependencies]
-kryptocore = { git = "https://github.com/kryptocorelabs/kryptocore", rev = "75a7d71821ed483f5f6dc13aa970e43efe08d834" }
+kryptocore = { git = "https://github.com/kryptocorelabs/kryptocore", rev = "89abb9bdf8cf4751f718343920abf70c0af8d2eb" }
