@@ -11,8 +11,8 @@ recovery seed rotation, rejection of keys recovered from old snapshots,
 ordinary-save seed stability and repeated recovery resets,
 the native channel, browser session invalidation, Rust advisories and licenses,
 and Python advisories. The Firefox session tests run in a mocked WebExtension
-environment. Real Firefox and Windows integration testing remains a release
-check.
+environment. The real Firefox and Windows integration test is a separate
+[release check](FIREFOX-RELEASE-TEST.md).
 
 Windows, Linux and macOS jobs also build Vault and a separately checked-out
 Rescue worker pinned to apps-source commit
@@ -45,13 +45,13 @@ malformed references and linked folders. Qt tests exercise both password modes,
 cancelled/wrong credentials, clearing inputs, the actual replacement PDF credential,
 digest copy/compare/save and no-clobber output. Screenshots use synthetic data.
 
-The Windows build job runs after those checks pass. It builds the native
-backend, helper, and channel DLL with the lockfile, then compares the contents
-of two Firefox ZIPs from clean build directories. The comparison includes the
-WASM, manifest, JavaScript and dependency notices. ZIP container timestamps
-can differ. The job attaches checksums for the native outputs, WASM and one ZIP.
-The checksums do not attest to reproducibility of the Windows GUI package or
-replace Authenticode or Mozilla signing.
+Two Windows jobs build the unsigned Firefox ZIP independently. The package
+uses stable entry order, fixed timestamps and stored entries. After the tests
+pass, the Windows build job compares the complete ZIP SHA-256 values, checks
+the contents and builds the native backend, helper and channel DLL. Main
+branch pushes and manual runs then attest the verified ZIP in a separate job.
+This verification covers the unsigned Firefox package. The signed XPI and
+Windows desktop executable follow separate distribution checks.
 
 ```powershell
 cargo +1.99.1 test --locked --release -p kryptocore-vault -p kryptocore-vault-format -p vault-firefox-channel -- --test-threads=1

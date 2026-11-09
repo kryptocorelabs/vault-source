@@ -366,7 +366,11 @@ pub fn run() -> Result<(), &'static str> {
         if count as u64 > MAX_REQUEST {
             return Err("Desktop-Anfrage überschreitet das Größenlimit");
         }
-        let result = match serde_json::from_slice(&line) {
+        let request = serde_json::from_slice(&line);
+        // The request owns its fields. Erase the serialized copy before
+        // starting a KDF, doing file I/O, or waiting for browser work.
+        drop(line);
+        let result = match request {
             Ok(request) => match &mut session {
                 Some(session) => session.handle(request),
                 None => match request {

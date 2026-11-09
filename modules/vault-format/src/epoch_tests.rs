@@ -122,6 +122,40 @@ fn authenticated_rollback_and_downgrade_are_rejected_when_a_floor_is_supplied() 
 }
 
 #[test]
+fn distinct_authenticated_copies_with_the_same_epoch_conflict() {
+    let folder = tempfile::tempdir().unwrap();
+    let legacy = folder.path().join("legacy.kcv");
+    let first = folder.path().join("first.kcv");
+    let second = folder.path().join("second.kcv");
+    enable_recovery(&legacy, PW, RECOVERY, true).unwrap();
+    let starting = enable_epoch_copy(&legacy, &first, PW).unwrap();
+    std::fs::copy(&first, &second).unwrap();
+    assert_eq!(open_with_revision(&second, PW, false).unwrap().1, Some(starting));
+
+    let left = save_with_revision(&first, PW, b"[]", false, Some(starting))
+        .unwrap()
+        .unwrap();
+    let right = save_with_revision(&second, PW, b"[]", false, Some(starting))
+        .unwrap()
+        .unwrap();
+    assert_eq!(left.vault_id, right.vault_id);
+    assert_eq!(left.epoch, right.epoch);
+    assert_ne!(left.fingerprint, right.fingerprint);
+    assert_eq!(left.fingerprint, Some(Sha256::digest(read(&first).unwrap()).into()));
+    let before = read(&second).unwrap();
+    assert_eq!(open_with_revision(&second, PW, false).unwrap().1, Some(right));
+    assert_eq!(check_revision(Some(right), Some(left)), Err(REVISION_REJECTED));
+    assert_eq!(
+        save_with_revision(&second, PW, b"[]", false, Some(left)),
+        Err(REVISION_REJECTED)
+    );
+    assert_eq!(read(&second).unwrap(), before);
+    let legacy_floor = Revision { fingerprint: None, ..left };
+    assert!(check_revision(Some(right), Some(legacy_floor)).is_ok());
+    assert!(open_with_recovery(&second, RECOVERY).is_ok());
+}
+
+#[test]
 fn oversized_epoch_upgrade_does_not_change_or_create_files() {
     let folder = tempfile::tempdir().unwrap();
     let old = folder.path().join("old.kcv");

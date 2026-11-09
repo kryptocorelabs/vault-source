@@ -25,17 +25,38 @@ class CacheTests(unittest.TestCase):
             self.assertEqual(epochs.minimum(state, backup), rev)
             with self.assertRaises(ValueError):
                 epochs.observe(state, backup, {**rev, 'epoch': 6})
-            self.assertEqual(state['vaults'][bytes(range(16)).hex()], 7)
+            self.assertEqual(state['vaults'][bytes(range(16)).hex()], {'epoch': 7})
             with self.assertRaises(ValueError):
                 epochs.observe(state, path, None)
             with self.assertRaises(ValueError):
                 epochs.observe(state, path, {'vault_id': [9]*16, 'epoch': 20})
             self.assertEqual(epochs.minimum(state, path), rev)
 
+    def test_existing_cache_learns_fingerprint_without_losing_the_epoch_floor(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'main.kcv'
+            cache = Path(folder) / 'cache.json'
+            identity = bytes(range(16)).hex()
+            cache.write_text(json.dumps({'schema': 1, 'vaults': {identity: 7},
+                                         'paths': {epochs.path_key(path): identity}}))
+            state = epochs.load(cache)
+            first = {'vault_id': list(range(16)), 'epoch': 7, 'fingerprint': [42] * 32}
+            self.assertEqual(epochs.minimum(state, path), {'vault_id': list(range(16)), 'epoch': 7})
+            self.assertTrue(epochs.observe(state, path, first))
+            cache.write_text(json.dumps(state))
+            state = epochs.load(cache)
+            with self.assertRaises(ValueError):
+                epochs.observe(state, path, {**first, 'fingerprint': [43] * 32})
+            self.assertEqual(epochs.minimum(state, path), first)
+            self.assertTrue(epochs.observe(state, path, first))
+            second = {**first, 'epoch': 8, 'fingerprint': [44] * 32}
+            self.assertTrue(epochs.observe(state, path, second))
+            self.assertEqual(epochs.minimum(state, path), second)
+
     def test_invalid_cache_and_invalid_authenticated_revision_fail_closed(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'cache.json'
-            for data in ('[]', '{}', '{"schema":2,"vaults":{},"paths":{}}',
+            for data in ('[]', '{}', '{"schema":3,"vaults":{},"paths":{}}',
                          json.dumps({'schema': 1, 'vaults': {}, 'paths': {'a'*64: []}}),
                          '['*2000 + '0' + ']'*2000):
                 path.write_text(data, encoding='utf-8')

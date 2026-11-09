@@ -32,6 +32,10 @@ $wasm = Join-Path $graph.target_directory 'wasm32-unknown-unknown/release/vault_
 Copy-Item -LiteralPath $wasm -Destination $package
 $notices = Join-Path $package 'third-party'
 $null = New-Item -ItemType Directory -Path $notices -Force
+$entries = [Collections.Generic.SortedDictionary[string,string]]::new([StringComparer]::Ordinal)
+foreach ($name in $files + @('manifest.json', 'vault_firefox_channel.wasm')) {
+    $entries.Add($name, (Join-Path $package $name))
+}
 $dependencyRows = [Collections.Generic.List[string]]::new()
 $packages = @{}
 $nodes = @{}
@@ -58,18 +62,38 @@ while ($pending.Count) {
     $texts = @(Get-ChildItem -LiteralPath (Split-Path -Parent $crate.manifest_path) -File |
         Where-Object Name -Match '^(LICENSE|COPYING|COPYRIGHT|NOTICE)([.-].*)?$')
     if (!$texts.Count) { throw "License text missing for $label." }
-    foreach ($file in $texts) { Copy-Item -LiteralPath $file.FullName -Destination $folder }
+    foreach ($file in $texts) {
+        Copy-Item -LiteralPath $file.FullName -Destination $folder
+        $entries.Add("third-party/$label/$($file.Name)", (Join-Path $folder $file.Name))
+    }
 }
 $notice = Join-Path $notices 'THIRD_PARTY_NOTICES.md'
-@('# Firefox channel dependencies', '', 'The compiled channel includes these Rust dependencies.',
+$dependencyRows.Sort([StringComparer]::Ordinal)
+$lines = @('# Firefox channel dependencies', '', 'The compiled channel includes these Rust dependencies.',
     'License texts are included in the corresponding directories.', '', '| Crate | Version | License |',
-    '| --- | --- | --- |') + @($dependencyRows | Sort-Object) | Set-Content -LiteralPath $notice -Encoding utf8
-$zipFiles = foreach ($file in $files + @('manifest.json', 'vault_firefox_channel.wasm')) {
-    Join-Path $package $file
-}
+    '| --- | --- | --- |') + $dependencyRows
+[IO.File]::WriteAllText($notice, ($lines -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
+$entries.Add('third-party/THIRD_PARTY_NOTICES.md', $notice)
 $archive = "$package.zip"
-Compress-Archive -LiteralPath $zipFiles -DestinationPath $archive -Force
-Compress-Archive -LiteralPath $notices -DestinationPath $archive -Update
+# Store entries in a fixed order and with fixed metadata. No compressor build
+# or source-file modification time affects the submission ZIP.
+$timestamp = [DateTimeOffset]::new(2000, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
+$archiveStream = [IO.File]::Create($archive)
+try {
+    $zip = [IO.Compression.ZipArchive]::new($archiveStream, [IO.Compression.ZipArchiveMode]::Create, $true)
+    try {
+        foreach ($name in $entries.Keys) {
+            $entry = $zip.CreateEntry($name, [IO.Compression.CompressionLevel]::NoCompression)
+            $entry.LastWriteTime = $timestamp
+            $entry.ExternalAttributes = 0
+            $inputStream = [IO.File]::OpenRead($entries[$name])
+            try {
+                $outputStream = $entry.Open()
+                try { $inputStream.CopyTo($outputStream) } finally { $outputStream.Dispose() }
+            } finally { $inputStream.Dispose() }
+        }
+    } finally { $zip.Dispose() }
+} finally { $archiveStream.Dispose() }
 $wasmHash = (Get-FileHash -LiteralPath $wasm -Algorithm SHA256).Hash.ToLowerInvariant()
 $zipHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
 @("$zipHash  $(Split-Path -Leaf $archive)", "$wasmHash  $(Split-Path -Leaf $package)/vault_firefox_channel.wasm") |

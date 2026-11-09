@@ -22,11 +22,16 @@ and emergency-sheet renewals increment the epoch. Backups retain the exact
 bytes and epoch. Failed operations do not deliberately advance it; counter
 overflow rejects writes. Password reset still rotates the payload seed.
 
-After authentication, the GUI records the highest observed epoch per ID and a
-binding to the selected path in `epoch-observations.json` beside local settings.
+After authentication, the GUI records the highest observed epoch per ID, the
+SHA-256 fingerprint of that exact encrypted snapshot and a binding to the
+selected path in `epoch-observations.json` beside local settings.
 The worker receives that minimum when opening/recovering and keeps a minimum
 throughout its session. A lower epoch, replaced identity at a known path or
 downgrade to an older format is rejected before data is exposed or overwritten.
+A different valid file at an already observed epoch is also rejected. An exact
+copy remains usable. The first authenticated observation after upgrading fills
+in fingerprints for existing entries as they are opened. Older builds cannot read
+the upgraded local history.
 Discovery during an active session locks Vault and invalidates browser requests.
 Cache updates are serialized with a local lock and written using QSaveFile.
 
@@ -44,7 +49,7 @@ claim that a backup is the newest. See [rescue-first workflow](https://github.co
 
 This is **not complete rollback protection**. A new device without history,
 deleting/restoring the cache together with the vault, an unknown legacy file at
-a new path, equal-epoch conflicting copies, path aliases, key compromise or a
+a new path, unseen forks at a higher epoch, path aliases, key compromise or a
 hostile OS can defeat or fall outside these checks. It is not trusted monotonic
 hardware, server synchronization or an authoritative revision service.
 The public header exposes an ID and revision count; copies can be correlated.

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$OutputDirectory)
+param([Parameter(Mandatory)][string]$OutputDirectory, [string[]]$Packages)
 
 $ErrorActionPreference = 'Stop'
 $vault = Split-Path -Parent $PSScriptRoot
@@ -36,11 +36,19 @@ try {
     $manifestPath = Join-Path $vault 'extension/manifest.firefox.json'
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $archiveName = "vault-firefox-amo-$($manifest.version).zip"
-    $packages = foreach ($name in 'first', 'second') {
-        $env:CARGO_TARGET_DIR = Join-Path $output "wasm-target-$name"
-        $packageDirectory = Join-Path $output $name
-        & (Join-Path $vault 'package-firefox.ps1') -OutputDirectory $packageDirectory | Out-Host
-        Join-Path $packageDirectory $archiveName
+    if (!$Packages) {
+        $Packages = foreach ($name in 'first', 'second') {
+            $env:CARGO_TARGET_DIR = Join-Path $output "wasm-target-$name"
+            $packageDirectory = Join-Path $output $name
+            & (Join-Path $vault 'package-firefox.ps1') -OutputDirectory $packageDirectory | Out-Host
+            Join-Path $packageDirectory $archiveName
+        }
+    }
+    if ($Packages.Count -ne 2) { throw 'Expected exactly two independently built Firefox ZIPs.' }
+    $firstHash = (Get-FileHash -LiteralPath $Packages[0] -Algorithm SHA256).Hash
+    $secondHash = (Get-FileHash -LiteralPath $Packages[1] -Algorithm SHA256).Hash
+    if ($firstHash -ne $secondHash) {
+        throw "Firefox archive hashes differ: $firstHash vs $secondHash."
     }
     $first = Read-PackageHashes $packages[0]
     $second = Read-PackageHashes $packages[1]
@@ -60,7 +68,7 @@ try {
         "$($hash.ToLowerInvariant())  $file"
     }
     $rows += "$($first['vault_firefox_channel.wasm'].ToLowerInvariant())  vault_firefox_channel.wasm"
-    $rows += "$((Get-FileHash -LiteralPath $packages[0] -Algorithm SHA256).Hash.ToLowerInvariant())  $archiveName"
+    $rows += "$($firstHash.ToLowerInvariant())  $archiveName"
     $rows | Set-Content -LiteralPath (Join-Path $output 'SHA256SUMS.txt') -Encoding ascii
     $rows
 } finally {

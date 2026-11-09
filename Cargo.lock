@@ -395,6 +395,7 @@ dependencies = [
  "kryptocore",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "zeroize",
 ]

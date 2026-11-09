@@ -5,6 +5,7 @@ use std::{
 };
 
 use kryptocore::{decrypt, derive_key, encrypt, Key, Salt};
+use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 use zeroize::Zeroizing;
 
@@ -34,6 +35,8 @@ mod password_tests;
 pub struct Revision {
     pub vault_id: [u8; 16],
     pub epoch: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<[u8; 32]>,
 }
 
 /// Format facts derived from the same authenticated bytes as the plaintext.
@@ -52,7 +55,14 @@ pub fn check_revision(
     minimum: Option<Revision>,
 ) -> Result<(), &'static str> {
     if let Some(minimum) = minimum {
-        if !observed.is_some_and(|r| r.vault_id == minimum.vault_id && r.epoch >= minimum.epoch) {
+        if !observed.is_some_and(|r| {
+            r.vault_id == minimum.vault_id
+                && (r.epoch > minimum.epoch
+                    || (r.epoch == minimum.epoch
+                        && minimum
+                            .fingerprint
+                            .is_none_or(|fingerprint| r.fingerprint == Some(fingerprint))))
+        }) {
             return Err(REVISION_REJECTED);
         }
     }
@@ -80,18 +90,29 @@ fn layout(file: &[u8]) -> Result<(usize, usize), &'static str> {
 
 // Only expose this metadata after payload authentication.
 fn revision(file: &[u8]) -> Option<Revision> {
-    file.starts_with(EPOCH_HEADER).then(|| Revision {
-        vault_id: file[5..21].try_into().expect("validated layout"),
-        epoch: u64::from_be_bytes(file[21..29].try_into().expect("validated layout")),
+    revision_from_parts(file, &[])
+}
+
+fn revision_from_parts(header: &[u8], payload: &[&[u8]]) -> Option<Revision> {
+    header.starts_with(EPOCH_HEADER).then(|| {
+        let mut hasher = Sha256::new();
+        hasher.update(header);
+        for part in payload {
+            hasher.update(part);
+        }
+        Revision {
+            vault_id: header[5..21].try_into().expect("validated layout"),
+            epoch: u64::from_be_bytes(header[21..29].try_into().expect("validated layout")),
+            fingerprint: Some(hasher.finalize().into()),
+        }
     })
 }
 
 fn advanced_header(file: &[u8]) -> Result<Vec<u8>, &'static str> {
     let (_, aad) = layout(file)?;
     let mut header = file[..aad].to_vec();
-    if let Some(r) = revision(file) {
-        let next = r
-            .epoch
+    if file.starts_with(EPOCH_HEADER) {
+        let next = u64::from_be_bytes(file[21..29].try_into().expect("validated layout"))
             .checked_add(1)
             .ok_or("Tresorepoche ist ausgeschöpft")?;
         header[21..29].copy_from_slice(&next.to_be_bytes());
@@ -174,11 +195,8 @@ pub fn enable_epoch_copy(
     header.extend_from_slice(&id);
     header.extend_from_slice(&1u64.to_be_bytes());
     header.extend_from_slice(&file[5..RECOVERY_AAD_LEN]);
-    write_payload(destination, &payload_key(&seed)?, &header, &data, true)?;
-    Ok(Revision {
-        vault_id: id,
-        epoch: 1,
-    })
+    write_payload(destination, &payload_key(&seed)?, &header, &data, true)?
+        .ok_or("Interner Fehler beim Ermitteln der Tresorversion")
 }
 
 /// Read-only KCV2 recovery access. Does not reset a password or write to the source.
@@ -229,8 +247,7 @@ pub fn save_with_revision(
             let (seed, _) = open_recoverable(&file, password, 0)?;
             check_revision(revision(&file), minimum)?;
             let header = advanced_header(&file)?;
-            write_payload(path, &payload_key(&seed)?, &header, data, false)?;
-            return Ok(revision(&header));
+            return write_payload(path, &payload_key(&seed)?, &header, data, false);
         }
         if !file.starts_with(HEADER) {
             return Err("Unbekanntes Tresorformat");
@@ -257,13 +274,14 @@ fn write_payload(
     aad: &[u8],
     data: &[u8],
     create: bool,
-) -> Result<(), &'static str> {
+) -> Result<Option<Revision>, &'static str> {
     if data.len() > MAX_FILE - aad.len() - 24 - 16 {
         return Err("Tresor überschreitet das Vorschaulimit von 4 MiB");
     }
     let (nonce, ciphertext) =
         encrypt(key, data, aad).map_err(|_| "Verschlüsselung fehlgeschlagen")?;
-    write_file(path, &[aad, &nonce, &ciphertext], create)
+    write_file(path, &[aad, &nonce, &ciphertext], create)?;
+    Ok(revision_from_parts(aad, &[&nonce, &ciphertext]))
 }
 
 pub fn backup(path: &Path, destination: &Path, password: &[u8]) -> Result<(), &'static str> {
@@ -400,7 +418,7 @@ pub fn create_with_recovery(
     let mut header = RECOVERY_HEADER.to_vec();
     append_slot(&mut header, password, 0, &seed[..])?;
     append_slot(&mut header, recovery, 1, &seed[..])?;
-    write_payload(path, &payload_key(&seed[..])?, &header, data, true)
+    write_payload(path, &payload_key(&seed[..])?, &header, data, true).map(|_| ())
 }
 
 pub fn enable_recovery_with_revision(
@@ -439,8 +457,7 @@ pub fn enable_recovery_with_revision(
     }
     append_slot(&mut header, password, 0, &seed[..])?;
     append_slot(&mut header, recovery, 1, &seed[..])?;
-    write_payload(path, &payload_key(&seed[..])?, &header, &data, create)?;
-    Ok(revision(&header))
+    write_payload(path, &payload_key(&seed[..])?, &header, &data, create)
 }
 
 /// Unlocked password change. The default retains the KCV2/KCV3 seed and recovery
@@ -477,23 +494,23 @@ pub fn change_password_with_revision(
     serde_json::from_slice::<Vec<crate::Login>>(&data).map_err(|_| "Ungültige Tresoreinträge")?;
     let (slots, aad) = layout(&file)?;
     let mut header = advanced_header(&file)?[..slots].to_vec();
-    if rotate_key {
+    let observed = if rotate_key {
         let recovery = new_recovery
             .ok_or("Speichere zuerst ein neues Notfallblatt für den Schlüsselwechsel.")?;
         let mut fresh_seed = Zeroizing::new([0; 32]);
         getrandom::fill(&mut fresh_seed[..]).map_err(|_| "Zufallsquelle nicht verfügbar")?;
         append_slot(&mut header, new_password, 0, &fresh_seed[..])?;
         append_slot(&mut header, recovery, 1, &fresh_seed[..])?;
-        write_payload(path, &payload_key(&fresh_seed[..])?, &header, &data, false)?;
+        write_payload(path, &payload_key(&fresh_seed[..])?, &header, &data, false)?
     } else {
         if new_recovery.is_some() {
             return Err("Ein neues Notfallblatt erfordert den Schlüsselwechsel.");
         }
         append_slot(&mut header, new_password, 0, &seed)?;
         header.extend_from_slice(&file[slots + SLOT_LEN..aad]);
-        write_payload(path, &payload_key(&seed)?, &header, &data, false)?;
-    }
-    Ok((revision(&header), rotate_key))
+        write_payload(path, &payload_key(&seed)?, &header, &data, false)?
+    };
+    Ok((observed, rotate_key))
 }
 
 /// Authenticate recovery access, rotate the payload seed and replace both slots.
@@ -523,8 +540,8 @@ pub fn reset_password_with_revision(
     let mut header = advanced[..slots].to_vec();
     append_slot(&mut header, password, 0, &seed[..])?;
     append_slot(&mut header, recovery, 1, &seed[..])?;
-    write_payload(path, &payload_key(&seed[..])?, &header, &data, false)?;
-    Ok((entries, revision(&header)))
+    let observed = write_payload(path, &payload_key(&seed[..])?, &header, &data, false)?;
+    Ok((entries, observed))
 }
 
 #[cfg(test)]

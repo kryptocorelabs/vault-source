@@ -25,8 +25,8 @@ Local backup receipts and filesystem dates are informational, editable state.
 | An attacker modifies header, nonce, ciphertext or tag | Authentication fails. Size limits bound input; failed validation must not replace the source. |
 | An attacker has an earlier copy and its password | That snapshot remains readable. Earlier reset implementations also retained its payload seed. The unreleased recovery hardening rotates the seed, preventing the old seed from opening the updated file. It cannot revoke old plaintext. |
 | A recovery secret is exposed | Password reset preserves that secret. Renew the emergency sheet from the unlocked vault if it may be exposed. Old copies still retain old access paths. |
-| An attacker restores an older authentic file | KCV1/KCV2 still authenticate older files. Optional KCV3 compares an authenticated counter with separately retained local state; resetting that state, first use on another device and equal-epoch forks remain outside its protection. Vault has no trusted external freshness state or rollback detector. AAD and signatures alone do not prove the newest file was selected. |
-| A local attacker reads UI/process memory | Rust clears selected owned buffers; Python/Qt/JSON copies, swap and crash dumps may persist. Locking stops access through the app but cannot guarantee forensic erasure. |
+| An attacker restores or substitutes an authentic snapshot | KCV1/KCV2 still authenticate older files. Optional KCV3 records the counter and fingerprint of authenticated bytes locally. It rejects lower counters and different snapshots at a recorded counter. Resetting the history with the file, first use on another device and unseen higher-counter forks remain outside this check. |
+| A local attacker reads UI/process memory | Rust clears selected owned buffers, including the serialized desktop request before processing. The worker still holds the vault password while unlocked. Python/Qt, buffered I/O, swap and crash dumps may retain copies. Locking ends the worker session and browser access. |
 | A relay or website requests browser access | The v5 encrypted channel, paired secret, origin/tab/frame/session checks and lock invalidation enforce their documented scope. A compromised extension, app or OS is outside that scope. |
 | Credentials were already filled, exported or copied | Vault cannot retract plaintext or reset the corresponding website accounts. The user must rotate affected service credentials. |
 | A normal password change is made without re-keying | For KCV2/KCV3 only password wrapping changes; the seed and recovery access remain. An old extracted seed still works against current payloads. Explicit re-keying replaces the seed and, in the GUI, recovery credential; it cannot revoke old copies. |
@@ -46,6 +46,25 @@ file is synced before persistence; this does not promise survival of every power
 failure, filesystem defect or concurrent external writer. Protect independent,
 dated backups and test recovery on a disposable copy. Authenticity is not a
 rollback detector, identity proof or malware scan.
+
+## Further hardening
+
+- For shorter password lifetime, evaluate a file-scoped unlock handle in the
+  Rust worker. Verify the current wrapping slot and authenticated revision
+  before using it. Password changes and slot renewal still need fresh
+  authorization. Test replacement while unlocked, re-key, lock and KCV1
+  compatibility before switching session storage.
+- For side-channel review, start at fixed-size key and token checks and
+  authorization paths observable over the browser bridge. Retest response
+  behavior on compiled builds. Argon2id uses some data-dependent memory
+  accesses by design. Track timing measurements separately from functional
+  test results.
+- For an optional hardware slot, evaluate CTAP2 `hmac-secret` with per-vault
+  context, token verification, a spare token and independent paper recovery.
+  The authenticator retains its internal secret. The derived secret and
+  decrypted records still need protection in the application. A hardware
+  requirement must be reflected in every normal unlock route. Test loss,
+  replacement and offline recovery before adopting a format or policy.
 
 See [security policy](SECURITY.md), [usage](USAGE.md),
 [recovery hardening](RECOVERY-HARDENING.md) and the

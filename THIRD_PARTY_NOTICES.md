@@ -12,8 +12,9 @@ Keep the files referenced by the applicable inventory with a redistribution.
 The [Firefox lint dependency snapshot](third-party/FIREFOX-LINT-TOOLING.tsv)
 covers the local web-ext 10.8.0 tool and its npm dependencies. That toolchain
 is separate from the extension ZIP. CI runner images, toolchain channels,
-GitHub Action major tags, cargo-audit and cargo-fuzz are floating references
-in the workflow and have no single exact historical version in the source.
+GitHub Action major tags, cargo-audit and cargo-fuzz were floating references
+in that historical workflow. Current workflow action references are pinned to
+full upstream commit IDs.
 
 ## KryptoCore
 

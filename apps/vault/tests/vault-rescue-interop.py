@@ -95,6 +95,23 @@ with tempfile.TemporaryDirectory(prefix='vault-rescue-interop-') as folder:
     old_epoch = epoch_file.read_bytes()
     second = client.call(action='put', previous=site, site=site, username=username, password=login_secret)['revision']
     assert second['epoch'] == 2 and second['vault_id'] == first['vault_id']
+    observed = epoch_file.read_bytes()
+    assert bytes(second['fingerprint']).hex() == hashlib.sha256(observed).hexdigest()
+    fork = folder/'KCV3-fork.kcv'
+    fork.write_bytes(old_epoch)
+    other = Vault()
+    other.call(action='open', path=str(fork), password=password, create=False, minimum_revision=first)
+    conflict = other.call(action='put', previous=site, site=site, username='Synthetic fork',
+                          password='Synthetic fork password')['revision']
+    other.close()
+    assert conflict['epoch'] == second['epoch'] and conflict['fingerprint'] != second['fingerprint']
+    fork_bytes = fork.read_bytes()
+    epoch_file.write_bytes(fork_bytes)
+    rejected = client.call(action='reveal', site=site, expect=False)
+    assert rejected['code'] == 'revision_rejected' and 'password' not in rejected
+    assert epoch_file.read_bytes() == fork_bytes
+    epoch_file.write_bytes(observed)
+    assert client.call(action='reveal', site=site)['password'] == login_secret
     export(epoch_file, folder/'KCV3-password.json', password)
     export(epoch_file, folder/'KCV3-recovery.json', recovery, 'recovery_key')
     client.close()

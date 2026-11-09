@@ -33,8 +33,10 @@ the ID and advance too. Reset also generates a fresh seed and both wrapping
 slots. Overflow fails before replacing the source. Backups preserve bytes.
 
 `open_with_revision` returns metadata only after payload authentication. The
-caller may supply a remembered `Revision` to checked writes/reset/backup paths;
-a different ID, lower epoch or missing revision fails closed. Existing wrapper
+caller may supply a remembered `Revision` to checked writes/reset/backup paths.
+A different ID, lower epoch or missing revision fails closed. When the caller
+also supplies the SHA-256 fingerprint of a known snapshot, a different file at
+the same epoch fails closed. The fingerprint is local metadata. Existing wrapper
 APIs remain available without an external minimum. CLI/library callers do not
 automatically gain the GUI's local persistent policy.
 
