@@ -31,6 +31,25 @@ session-bound saving tests; the current signed add-on is 0.1.16.
 Existing v5 pairings from Vault RC.1 carry over to RC.2.
 Self-distributed updates need their own distribution path.
 
+### Signing hand-off and release verification
+
+The packaging script and CI produce an unsigned ZIP. The signing hand-off is
+that exact ZIP and the returned XPI. The current hand-off is manual through
+AMO, outside the build. Keep the submitted ZIP for comparison. To check the
+returned package against it before publishing, run this with release Firefox
+and GeckoDriver:
+
+```powershell
+python apps/vault/tests/verify-signed-addon.py --unsigned PATH_TO_SUBMITTED_ZIP --xpi PATH_TO_RETURNED_XPI --version 0.1.16 --firefox PATH_TO_FIREFOX --geckodriver PATH_TO_GECKODRIVER --output PATH_TO_REPORT_DIR
+```
+
+The [AMO adapter](tests/mozilla_amo.py) checks the allowed signing metadata,
+manifest identity and payload equivalence. Release Firefox performs signature
+verification with enforcement enabled and confirms the add-on stays active
+after restart. A future submission client can use the same hand-off. Stock
+Firefox still requires Mozilla signing for persistent release installs. See
+[Mozilla's signing and distribution guide](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/).
+
 ## Version 0.1.16 design preview
 
 The popup and in-page actions follow the shared desktop palette and rounded

@@ -17,6 +17,19 @@ websites before creating a fresh vault. The source/export directories and OS
 remain trusted. A preview digest detects changed bytes, not a trusted sender.
 Local backup receipts and filesystem dates are informational, editable state.
 
+## Firefox release dependencies
+
+| Dependency | Why it is trusted | Possible alternative |
+| --- | --- | --- |
+| [Mozilla Add-ons signing](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/) | Stock Firefox requires a Mozilla signature for persistent release installs. An AMO outage or review delay can block new releases. | Use the AMO API to replace manual submission, or list the add-on on AMO to change distribution. Both routes still use Mozilla signing. |
+| Release Firefox and GeckoDriver | Firefox enforces signature trust and checks persistent installation. GeckoDriver drives a disposable profile for the release check. | Verify with the same release Firefox in a disposable profile through a manual test. Repeat unsigned and modified-package rejection and restart checks. |
+| GitHub Actions artifact attestation | Binds the unsigned submission ZIP to the build workflow and source. | An independently operated builder could attest the same artifact. The Firefox signature check still applies to the returned XPI. |
+
+The signing hand-off takes the exact unsigned submission ZIP and returns an
+XPI. The AMO adapter checks payload equivalence and the expected add-on ID and
+version. Firefox establishes trust in the browser signature separately. See the
+[release verification procedure](FIREFOX_RELEASE.md#signing-hand-off-and-release-verification).
+
 ## Attacker capabilities and limits
 
 | Scenario | Protection and remaining responsibility |

@@ -52,6 +52,7 @@ jobs:
         with:
           node-version: '24'
       - run: node --test apps/vault/tests/firefox-security.test.cjs
+      - run: python3 -m unittest discover -s apps/vault/tests -p test_mozilla_amo.py
 
   dependencies:
     runs-on: ubuntu-24.04

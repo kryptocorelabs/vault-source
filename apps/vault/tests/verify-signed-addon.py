@@ -12,43 +12,37 @@ from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
 
+from mozilla_amo import check_returned_payload
+
+ADDON_ID='vault@kryptocorelabs'
+
 parser=argparse.ArgumentParser()
 parser.add_argument('--xpi',type=Path,required=True)
 parser.add_argument('--unsigned',type=Path,required=True)
+parser.add_argument('--version',default='0.1.16',help='Expected version of the submitted release')
 parser.add_argument('--firefox',type=Path,required=True)
 parser.add_argument('--geckodriver',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
 args=parser.parse_args()
+if not __debug__:
+    raise SystemExit('Run without Python optimization to enforce browser verification checks.')
 args.output.mkdir(parents=True,exist_ok=True)
 xpi=args.xpi.resolve();unsigned=args.unsigned.resolve()
-with zipfile.ZipFile(xpi) as signed,zipfile.ZipFile(unsigned) as original:
-    names=[entry.filename for entry in signed.infolist()]
-    assert len(names)==len(set(names)),'Duplicate ZIP entries'
-    assert all(not entry.is_absolute() and '..' not in entry.parts for entry in map(Path,names)),'Unsafe ZIP path'
-    assert sum(entry.file_size for entry in signed.infolist())<16*1024*1024,'Unexpected XPI size'
-    reference={entry.filename for entry in original.infolist() if not entry.is_dir()}
-    actual={entry.filename for entry in signed.infolist() if not entry.is_dir()}
-    assert not reference-actual,'Missing uploaded files'
-    assert actual-reference=={'META-INF/cose.manifest','META-INF/cose.sig','META-INF/manifest.mf','META-INF/mozilla.sf','META-INF/mozilla.rsa'},'Unexpected added files'
-    manifest=json.loads(signed.read('manifest.json'))
-    assert manifest==json.loads(original.read('manifest.json')),'Manifest content changed'
-    assert manifest['version']=='0.1.16' and manifest['browser_specific_settings']['gecko']['id']=='vault@kryptocorelabs'
-    for name in reference-{'manifest.json'}:
-        assert signed.read(name)==original.read(name),'Changed payload: '+name
+check_returned_payload(unsigned, xpi, addon_id=ADDON_ID, version=args.version)
 
 def state(driver):
     with driver.context('chrome'):
         return driver.execute_async_script('''
           const done=arguments[arguments.length-1];
           const {AddonManager}=ChromeUtils.importESModule('resource://gre/modules/AddonManager.sys.mjs');
-          AddonManager.getAddonByID('vault@kryptocorelabs').then(addon => done({
+          AddonManager.getAddonByID(arguments[0]).then(addon => done({
             signaturesRequired: Services.prefs.getBoolPref('xpinstall.signatures.required', true),
             signedConstant: AddonManager.SIGNEDSTATE_SIGNED,
             addon: addon ? {id:addon.id,version:addon.version,isActive:addon.isActive,
               appDisabled:addon.appDisabled,userDisabled:addon.userDisabled,
               signedState:addon.signedState,temporarilyInstalled:addon.temporarilyInstalled} : null
           }), error=>done({error:String(error)}));
-        ''')
+        ''', ADDON_ID)
 
 with tempfile.TemporaryDirectory(prefix='firefox-signing-',dir=args.output) as temp:
     root=Path(temp);profile=root/'profile';profile.mkdir()
@@ -58,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='firefox-signing-',dir=args.output) as t
             data=original.read(entry)
             if entry.filename=='popup.css':data+=b'\n/* synthetic signature-negative test */\n'
             output.writestr(entry.filename,data)
-    report={'version':'0.1.16','addon_id':'vault@kryptocorelabs',
+    report={'version':args.version,'addon_id':ADDON_ID,
             'sha256':hashlib.sha256(xpi.read_bytes()).hexdigest(),
             'payload_matches_submission':True,'manifest_semantically_identical':True,
             'signature_required':True,'negative_checks':[],'states':[]}
@@ -80,7 +74,7 @@ with tempfile.TemporaryDirectory(prefix='firefox-signing-',dir=args.output) as t
                         assert state(driver)['addon'] is None,'Rejected package left an installed add-on'
                         report['negative_checks'].append({'case':label,'rejected':True})
                     else:raise AssertionError(label+' package was accepted with signature enforcement')
-                assert driver.install_addon(str(xpi),temporary=False)=='vault@kryptocorelabs'
+                assert driver.install_addon(str(xpi),temporary=False)==ADDON_ID
             end=time.monotonic()+15
             while True:
                 current=state(driver)
@@ -88,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix='firefox-signing-',dir=args.output) as t
                 time.sleep(.1)
             addon=current['addon']
             assert current['signaturesRequired'] and addon,'Missing add-on or signature enforcement'
-            assert addon['version']=='0.1.16' and addon['signedState']==current['signedConstant'],'Firefox did not confirm ordinary Mozilla signing'
+            assert addon['version']==args.version and addon['signedState']==current['signedConstant'],'Firefox did not confirm ordinary Mozilla signing'
             assert addon['isActive'] and not addon['appDisabled'] and not addon['userDisabled'] and not addon['temporarilyInstalled'],'Add-on is not persistently active'
             report['states'].append({'phase':phase,**current})
             print('PASS',phase,': release Firefox accepted the signed XPI with signatures required; active and non-temporary.')
