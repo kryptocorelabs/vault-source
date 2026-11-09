@@ -1,0 +1,135 @@
+name: Vault Windows build provenance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.*'
+      - 'apps/vault/**'
+      - 'apps/desktop/tests/check-portable.ps1'
+      - 'modules/vault-format/**'
+      - '.github/workflows/windows-provenance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        copy: [first, second]
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: source-${{ matrix.copy }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.18'
+          architecture: x64
+      - run: rustup toolchain install 1.99.1-x86_64-pc-windows-msvc --profile minimal
+      - name: Build and smoke-test the standalone Vault executable
+        shell: pwsh
+        working-directory: source-${{ matrix.copy }}
+        env:
+          BUILD_COPY: ${{ matrix.copy }}
+          PYTHONHASHSEED: '0'
+          RUSTUP_TOOLCHAIN: 1.99.1-x86_64-pc-windows-msvc
+          CARGO_INCREMENTAL: '0'
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $vs) { throw 'An x64 Visual Studio toolchain is required.' }
+          $developerShell = Join-Path $vs 'Common7/Tools/VsDevCmd.bat'
+          $variables = cmd.exe /d /c ('call "' + $developerShell + '" -arch=x64 -host_arch=x64 -no_logo && set')
+          if ($LASTEXITCODE -ne 0) { throw 'Visual Studio environment initialization failed.' }
+          foreach ($line in $variables) {
+            $name, $value = $line -split '=', 2
+            if ($name -and $null -ne $value) { [Environment]::SetEnvironmentVariable($name, $value, 'Process') }
+          }
+          $linker = Get-Command link.exe -CommandType Application
+          $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = $linker.Source
+          $env:SOURCE_DATE_EPOCH = git show -s --format=%ct HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the source commit timestamp.' }
+          $build = Join-Path $env:RUNNER_TEMP "vault-$env:BUILD_COPY"
+          $output = Join-Path $build 'artifacts'
+          $venv = Join-Path $build 'venv'
+          $env:CARGO_TARGET_DIR = Join-Path $build 'cargo-target'
+          $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
+          $flags = @('-C', 'link-arg=/Brepro')
+          foreach ($mapping in @(@($PWD.Path, '/_/src'), @($cargoHome, '/_/cargo'))) {
+            foreach ($prefix in @($mapping[0].Replace('\', '/'), $mapping[0].Replace('/', '\')) | Select-Object -Unique) {
+              $flags += '--remap-path-prefix', "$prefix=$($mapping[1])"
+            }
+          }
+          $env:CARGO_ENCODED_RUSTFLAGS = $flags -join [char]0x1f
+          python -m venv $venv
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot create the build environment.' }
+          $python = Join-Path $venv 'Scripts/python.exe'
+          $lock = 'apps/vault/desktop/requirements-onefile-windows.lock'
+          & $python -m pip install --only-binary=:all: --require-hashes -r $lock
+          if ($LASTEXITCODE -ne 0) { throw 'Installing the locked packaging wheels failed.' }
+          & ./apps/vault/package-windows-onefile.ps1 -PythonExe $python -OutputDirectory $output -WorkDirectory (Join-Path $build 'work')
+          $file = Get-Item -LiteralPath (Join-Path $output 'KryptoCore-Vault-Portable.exe')
+          @{
+            source_commit = (git rev-parse HEAD)
+            rustc = ((rustc -vV) -join "`n")
+            python = (& $python -V)
+            msvc_linker = $linker.FileVersionInfo.FileVersion
+            windows_sdk = $env:WindowsSDKVersion
+            runner_image = $env:ImageVersion
+            cargo_lock_sha256 = (Get-FileHash -LiteralPath Cargo.lock).Hash.ToLowerInvariant()
+            wheels_lock_sha256 = (Get-FileHash -LiteralPath $lock).Hash.ToLowerInvariant()
+            name = $file.Name
+            size = $file.Length
+            sha256 = (Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'BUILD.json') -Encoding utf8
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: vault-windows-build-${{ matrix.copy }}
+          path: |
+            ${{ runner.temp }}/vault-${{ matrix.copy }}/artifacts/KryptoCore-Vault-Portable.exe
+            ${{ runner.temp }}/vault-${{ matrix.copy }}/artifacts/BUILD.json
+          if-no-files-found: error
+
+  compare-and-attest:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: vault-windows-build-*
+          path: builds
+      - name: Validate the build records and compare exact executable bytes
+        shell: bash
+        run: |
+          file=KryptoCore-Vault-Portable.exe
+          for copy in first second; do
+            dir="builds/vault-windows-build-$copy"
+            digest=$(sha256sum "$dir/$file" | cut -d ' ' -f 1)
+            size=$(stat -c '%s' "$dir/$file")
+            jq -e --arg commit "$GITHUB_SHA" --arg file "$file" --arg sha "$digest" --argjson size "$size" \
+              '.source_commit == $commit and .name == $file and .sha256 == $sha and .size == $size' "$dir/BUILD.json"
+          done
+          cmp "builds/vault-windows-build-first/$file" "builds/vault-windows-build-second/$file"
+          mkdir verified
+          cp "builds/vault-windows-build-first/$file" verified/
+          cp builds/vault-windows-build-first/BUILD.json verified/BUILD-FIRST.json
+          cp builds/vault-windows-build-second/BUILD.json verified/BUILD-SECOND.json
+          (cd verified && sha256sum "$file" > SHA256SUMS.txt)
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: verified/KryptoCore-Vault-Portable.exe
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: vault-windows-verified-${{ github.sha }}
+          path: verified/
+          if-no-files-found: error

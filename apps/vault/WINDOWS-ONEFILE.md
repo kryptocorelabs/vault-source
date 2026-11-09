@@ -29,6 +29,19 @@ under the output directory's `verification` folder.
 Use `-OutputDirectory` and `-WorkDirectory` for an isolated design build so
 an existing versioned package is preserved.
 
+The [Windows build workflow](../../.github/workflows/windows-provenance.yml)
+builds the full portable EXE on two separate Windows runners from the same
+source commit. It pins Rust and Python versions and checks the SHA-256 of
+each packaging wheel. Each job smoke-tests its EXE and records the compiler,
+runner image, input lockfiles and output digest. The final job compares the
+EXEs byte for byte and attests the matched artifact. A mismatch leaves the
+individual build records available for diagnosis.
+
+For the exact EXE from a successful run, check its digest against the two
+build records and verify its GitHub attestation with
+`gh attestation verify KryptoCore-Vault-Portable.exe -R kryptocorelabs/vault-source`.
+Existing preview ZIPs have their own release evidence.
+
 This is a local packaging preview. Before distributing a build publicly,
 review the bundled dependencies and their notices, Qt library replacement
 and matching source delivery, and Windows code signing. See the existing
