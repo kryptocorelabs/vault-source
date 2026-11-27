@@ -4,6 +4,10 @@ Vault is an open-source password manager for people who want to keep their
 logins on their own device. The desktop app stores them in an encrypted file
 and works offline without an account or cloud service.
 
+Part of **KryptoCoreLabs — One Core. Many Apps. One Community.** The shared
+Rust Core provides local cryptographic operations; Vault owns its file format,
+recovery and browser permissions. No telemetry or subscription is required.
+
 **Development preview.** Try it with test data. An independent security audit
 is pending.
 
@@ -61,6 +65,8 @@ uses Python 3.13 x64 and the pinned [Qt requirements](apps/vault/desktop/require
 End users of the single-file application do not install these development tools.
 
 - [Vault development and usage](apps/vault/README.md)
+- [First use, backups and recovery](apps/vault/USAGE.md)
+- [Workflow checks and remaining acceptance gates](apps/vault/tests/WORKFLOW_REVIEW_2026-11-27.md)
 - [CI and build consistency](apps/vault/CI.md)
 - [Single-file packaging](apps/vault/WINDOWS-ONEFILE.md)
 - [Browser support and roadmap](apps/vault/BROWSERS.md)

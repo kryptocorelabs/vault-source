@@ -13,8 +13,8 @@ maintainer review, not an independent security audit or a usability study.
 - Windows x64; CPython 3.13.18, PySide6-Essentials/Qt 6.10.3, zxcvbn 4.5.0.
 - Worker: `target/release/kryptocore-vault.exe`, SHA-256
   `5eaaad96ce51fdd8835183fe51f3d432430b5bc3476ee7aaca6de5e60aee32f7`.
-- Command from the repository root:
-  `C:/Users/redsc/Desktop/KryptoCore/dist/vault-onefile-venv/Scripts/python.exe apps/vault/tests/desktop-workflow.py`.
+- Command from the repository root, using the pinned GUI virtual environment:
+  `python apps/vault/tests/desktop-workflow.py`.
 
 The harness sets `QT_QPA_PLATFORM=offscreen`, redirects `LOCALAPPDATA` to a
 temporary directory, substitutes file-picker results and suppresses normal
