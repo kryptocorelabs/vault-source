@@ -1,8 +1,35 @@
 # Using Vault
 
 Vault is a local password manager. It encrypts saved logins in a `.kcv`
-file on your device. Use synthetic credentials to evaluate the release
-candidate and keep original copies of any credentials separately.
+file on your device. Use synthetic credentials to evaluate the development
+preview and keep original copies of any credentials separately.
+
+## First use and daily use
+
+The current desktop interface uses German labels. The instructions below keep
+those labels so you can find the matching controls.
+
+1. Start Vault and choose **Neuer Tresor**. Choose **Auswählen** to select a
+   name and location for the `.kcv` file. Enter and confirm a vault password
+   of at least 15 characters; the strength estimate is guidance, not a guarantee.
+2. Choose **Weiter zum Notfallblatt**, read the recovery warning, and choose
+   **PDF speichern und fortfahren**. Protect that PDF separately from the vault
+   and its backups. It cannot replace a missing or damaged vault file.
+3. Choose **Neuer Login**, enter **Website**, **Benutzername** and **Passwort**,
+   then **Login speichern**. **Erzeugen** generates a login password;
+   **Anzeigen** and **Verbergen** let you check and hide it deliberately.
+4. Use **Website oder Benutzername suchen** to find an entry. Double-click it
+   (or select it and press Enter) to show its details. Choose **Bearbeiten** to
+   change it. Leave **Neues Passwort** empty to retain its current password.
+5. Choose **Sperren** or press `Ctrl+L` when finished. To return, choose
+   **Tresor entsperren** for the remembered file, or **Anderen Tresor öffnen**
+   to choose another file. When no file is remembered, use **Tresor öffnen**.
+   Enter its password. In **Alltag** mode, Vault remembers the file location,
+   but still requires the password.
+
+Make and test a separate backup before relying on the vault. Browser setup is
+described in the [Firefox guide](README.md#firefox); pairing and each credential-fill
+approval remain deliberate security steps.
 
 ## What encryption protects
 
@@ -56,21 +83,22 @@ history is available.
 
 ## Move and review a vault — development builds
 
-Use **Settings → Export logins as JSON** for a deliberate plaintext transfer,
-then **Create a new vault from JSON** to create a KCV4 file with fresh key
+Use **Einstellungen → Logins als JSON exportieren** (export logins as JSON) for
+a deliberate plaintext transfer, then **Aus JSON-Export umziehen** on the start
+screen to create a KCV4 file with fresh key
 material, a new password and a new emergency sheet. The desktop also accepts
 Rescue's JSON array. Keep the old file and protect the unencrypted JSON.
 [Migration guide](MIGRATION.md)
 
-**Status** beside **Lock**, or **Settings → Vault status**, shows entries,
+**Status** beside **Sperren**, or **Einstellungen → Tresor-Status**, shows entries,
 recovery-slot availability, the last backup recorded here and the filesystem
 modification date. Unknown backup history stays unknown. A 180-day-old date
 prompts a check; this is not a security score or proof that a backup is readable.
 
 ## Password changes and file fingerprints — development builds
 
-Development builds also offer **Settings → Change vault password** with an
-optional new key/new emergency-sheet step and **File fingerprint (SHA-256)**
+Development builds also offer **Einstellungen → Tresorpasswort ändern** with an
+optional new key/new emergency-sheet step and **Datei-Prüfwert (SHA-256)**
 for recording/comparing encrypted file snapshots. Old copies remain readable
 with matching credentials. See [access and integrity](ACCESS-AND-INTEGRITY.md).
 

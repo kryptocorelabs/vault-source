@@ -223,4 +223,24 @@ mod tests {
         browser.buffer[length - 1] ^= 1;
         assert!(vault.step(2, &browser.buffer[..length]).is_err());
     }
+
+    #[test]
+    fn abi_rejects_invalid_inputs_and_clears_the_owned_session_buffer() {
+        for (operation, length) in [(2, BUFFER_SIZE + 1), (99, 32), (2, 1)] {
+            let (mut browser, mut vault) = handshake();
+            let valid_length = browser.step(1, b"synthetic request").unwrap();
+            let valid = browser.buffer[..valid_length].to_vec();
+            vault.buffer.fill(0x5a);
+            // SAFETY: This test owns the live channel and holds no buffer aliases.
+            assert_eq!(unsafe { vault_channel_step(&mut vault, operation, length) }, -1);
+            assert!(vault.state.is_none());
+            assert!(vault.buffer.iter().all(|byte| *byte == 0));
+
+            vault.buffer[..valid.len()].copy_from_slice(&valid);
+            // An error ends this channel even if the next frame was otherwise valid.
+            // SAFETY: The same exclusively owned test handle remains live.
+            assert_eq!(unsafe { vault_channel_step(&mut vault, 2, valid.len()) }, -1);
+            assert!(vault.buffer.iter().all(|byte| *byte == 0));
+        }
+    }
 }

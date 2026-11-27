@@ -186,8 +186,77 @@ with tempfile.TemporaryDirectory(prefix='vault-recovery-menu-', dir=root / 'dist
     site = 'https://example.invalid'
     username = 'Synthetic user'
     secret = 'Synthetic login password'
-    vault.entries = vault.request(action='put', site=site, username=username, password=secret)['entries']
+
+    def create_login_in_editor():
+        panel = vault.dialog
+        assert panel.windowTitle() == 'Neuer Login'
+        fields = {field.accessibleName(): field for field in panel.findChildren(ui.W.QLineEdit)}
+        fields['Website'].setText(site)
+        fields['Benutzername'].setText(username)
+        click(panel, 'Erzeugen')
+        assert len(fields['Passwort'].text()) == 28
+        assert fields['Passwort'].echoMode() == ui.W.QLineEdit.Password
+        click(panel, 'Anzeigen')
+        assert fields['Passwort'].echoMode() == ui.W.QLineEdit.Normal
+        click(panel, 'Verbergen')
+        assert fields['Passwort'].echoMode() == ui.W.QLineEdit.Password
+        fields['Passwort'].setText(secret)
+        click(panel, 'Login speichern')
+        assert not panel.isVisible(), panel.error.text()
+
+    later(create_login_in_editor)
+    vault.edit()
+    check()
+    assert len(vault.entries) == 1 and vault.logins.count() == 1
+    assert vault.request(action='reveal', site=site)['password'] == secret
+
+    username = 'Synthetic edited user'
+
+    def edit_login_in_editor():
+        panel = vault.dialog
+        assert panel.windowTitle() == 'Login bearbeiten'
+        fields = {field.accessibleName(): field for field in panel.findChildren(ui.W.QLineEdit)}
+        assert fields['Website'].text() == site
+        assert fields['Aktuelles Passwort'].text() == ''
+        assert fields['Neues Passwort'].text() == ''
+        reveal = next(control for control in panel.findChildren(ui.W.QPushButton)
+                      if control.accessibleName() == 'Aktuelles Passwort anzeigen oder verbergen')
+        reveal.click()
+        assert fields['Aktuelles Passwort'].text() == secret
+        reveal.click()
+        assert fields['Aktuelles Passwort'].text() == ''
+        fields['Benutzername'].setText(username)
+        click(panel, 'Login speichern')
+        assert not panel.isVisible(), panel.error.text()
+
+    later(edit_login_in_editor)
+    vault.edit(vault.entries[0])
+    check()
+    assert vault.entries[0]['username'] == username
+    assert vault.request(action='reveal', site=site)['password'] == secret, 'Blank password did not retain the login password'
+    for query in ('EXAMPLE.INVALID', 'EDITED USER'):
+        vault.search.setText(query)
+        assert vault.logins.count() == 1
+        assert vault.logins.item(0).data(ui.C.Qt.UserRole)['origin'] == site
+    vault.search.setText('No matching synthetic login')
+    assert vault.logins.count() == 0 and vault.status.text() == 'Keine passenden Logins'
+    vault.search.clear()
+    assert vault.logins.count() == 1
     original = vault_path.read_bytes()
+
+    def cancel_login_edit():
+        panel = vault.dialog
+        fields = {field.accessibleName(): field for field in panel.findChildren(ui.W.QLineEdit)}
+        fields['Website'].setText('https://cancelled.invalid')
+        fields['Neues Passwort'].setText('Synthetic cancelled login password')
+        click(panel, 'Abbrechen')
+
+    later(cancel_login_edit)
+    vault.edit(vault.entries[0])
+    check()
+    assert vault_path.read_bytes() == original
+    assert vault.entries[0]['origin'] == site and vault.entries[0]['username'] == username
+    print('Login editor: generated password reveal/hide, create/edit, retained password, search and cancel passed.')
 
     def check_delete_dialog():
         panel = vault.dialog

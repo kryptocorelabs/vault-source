@@ -215,6 +215,14 @@ mod tests {
     }
 
     #[test]
+    fn nested_blob_schemes_are_rejected_before_origin_lookup() {
+        let nested = format!("{}https://example.invalid", "blob:".repeat(4096));
+        for input in ["blob:https://example.invalid", nested.as_str()] {
+            assert!(origin(input).is_err());
+        }
+    }
+
+    #[test]
     fn vault_roundtrip_and_rejects_tampering() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("sample.kcv");
